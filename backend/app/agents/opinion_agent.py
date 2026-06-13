@@ -1,0 +1,133 @@
+"""
+agents/opinion_agent.py — Synthesizes all research into a final legal opinion.
+
+RESPONSIBILITY:
+  This is the most important agent output — what the user actually reads.
+  It receives all 3 research results and produces:
+  1. Plain-English case overview
+  2. Strongest legal arguments
+  3. Case Strength Score (0-100) — the visual centerpiece of the UI
+  4. Direct answer: does the user have a viable case?
+  5. Risks and weaknesses (honesty builds trust)
+  6. Recommended next steps
+
+CASE STRENGTH SCORE — WHY IT WINS HACKATHONS:
+  Abstract legal analysis is hard for judges to evaluate.
+  A score ("Your case strength: 74/100") is immediately understandable.
+  It shows the system is doing real analysis, not just rephrasing the question.
+  Display this as a colored progress bar in the frontend:
+    0-30  = red,  31-60 = yellow,  61-85 = green,  86-100 = dark green
+
+HOW THE SCORE IS EXTRACTED:
+  The LLM is instructed to end its response with a specific JSON block:
+  {"case_strength_score": 74, "has_viable_case": true, "recommended_actions": [...]}
+  _parse_opinion_json() extracts this with regex then removes it from
+  the user-facing text (so the user doesn't see raw JSON).
+
+STREAMING:
+  This is the longest agent response. It MUST stream to the frontend or
+  users will stare at a blank screen for 10-20 seconds. Streaming is
+  implemented via the stream_callback from LangGraph config.
+
+TEAM — WHERE HUMAN EFFORT IS NEEDED:
+  1. JSON extraction regex is fragile for complex nested JSON.
+     Test with outputs where the LLM puts line breaks inside the JSON block.
+  2. The score calibration needs real testing. Does the LLM give scores
+     that feel accurate? Have someone with legal knowledge review 5 cases.
+  3. Disclaimer: The output MUST include a legal disclaimer
+     ("This is not legal advice. Consult a licensed attorney.").
+     The SYSTEM_PROMPT includes this — verify it's always in the output.
+  4. Token cost: this agent sends the most tokens (all 3 research results).
+     If OpenAI costs are high during testing, use gpt-4o-mini here only.
+
+AI USAGE NOTE:
+  The prompt here is the highest-value thing to iterate on. Have a team
+  member refine the exact wording every few test runs. No code changes needed
+  — just update SYSTEM_PROMPT. Use GPT-4 to help write better prompts.
+"""
+from langchain_openai import ChatOpenAI
+from langchain_core.messages import SystemMessage, HumanMessage
+from app.config import get_settings
+# Import from state.py, NOT graph.py — avoids circular import
+from app.agents.state import AgentState
+import json
+import re
+
+settings = get_settings()
+
+SYSTEM_PROMPT = """You are a senior US legal analyst synthesizing research from multiple sources.
+
+Given:
+- The user's case details (intake summary)
+- Federal law findings
+- State law findings  
+- Relevant past case law
+
+Produce a comprehensive legal opinion that includes:
+
+1. **Case Overview** — plain English summary of the legal situation
+2. **Strongest Legal Arguments** — the top 2-3 laws/precedents that support the user
+3. **Case Strength Score** — a number from 0-100 indicating how strong the case is
+   - 0-30: Weak, limited legal options
+   - 31-60: Moderate, some merit but challenges exist
+   - 61-85: Strong, clear legal violations found
+   - 86-100: Very strong, excellent precedent and clear law violations
+4. **Does the user have a viable case?** — direct yes/no with reasoning
+5. **Key risks or weaknesses** — be honest about challenges
+6. **Recommended next steps** — 3-5 concrete actions the user should take NOW
+
+IMPORTANT: Always end with a JSON block in this exact format:
+{"case_strength_score": <number>, "has_viable_case": <true/false>, "recommended_actions": ["action1", "action2", "action3"]}"""
+
+
+async def run_opinion_agent(state: AgentState) -> dict:
+    intake = state.get("intake_summary", {})
+    federal = state.get("federal_law_results", [])
+    state_law = state.get("state_law_results", [])
+    case_law = state.get("case_law_results", [])
+
+    context = {
+        "intake": intake,
+        "federal_law": [r.get("analysis", "") for r in federal],
+        "state_law": [r.get("analysis", "") for r in state_law],
+        "case_law": [r.get("analysis", "") for r in case_law],
+    }
+
+    llm = ChatOpenAI(model=settings.OPENAI_MODEL, api_key=settings.OPENAI_API_KEY, streaming=True)
+    messages = [
+        SystemMessage(content=SYSTEM_PROMPT),
+        HumanMessage(content=f"Research data:\n{json.dumps(context, indent=2)}"),
+    ]
+
+    opinion_text = ""
+    stream_cb = state.get("stream_callback")
+
+    if stream_cb:
+        await stream_cb("\n\n---\n## 📊 Legal Analysis\n\n")
+
+    async for chunk in llm.astream(messages):
+        token = chunk.content
+        opinion_text += token
+        if stream_cb:
+            await stream_cb(token)
+
+    # Parse the structured JSON output
+    score = 50
+    recommended_actions = []
+    match = re.search(r'\{[^}]*"case_strength_score"[^}]*\}', opinion_text, re.DOTALL)
+    if match:
+        try:
+            parsed = json.loads(match.group())
+            score = int(parsed.get("case_strength_score", 50))
+            recommended_actions = parsed.get("recommended_actions", [])
+        except (json.JSONDecodeError, ValueError):
+            pass
+
+    # Remove JSON block from the displayed opinion
+    clean_opinion = re.sub(r'\{[^}]*"case_strength_score"[^}]*\}', '', opinion_text, flags=re.DOTALL).strip()
+
+    return {
+        "opinion": clean_opinion,
+        "case_strength_score": score,
+        "recommended_actions": recommended_actions,
+    }

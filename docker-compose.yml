@@ -1,0 +1,58 @@
+version: "3.9"
+
+# ─────────────────────────────────────────────────────────────
+#  LexAI Infrastructure
+#  Starts PostgreSQL + Redis with one command:  docker-compose up -d
+#  Stop:  docker-compose down
+#  Wipe data and restart fresh:  docker-compose down -v && docker-compose up -d
+# ─────────────────────────────────────────────────────────────
+#
+#  DIAGRAM MAPPING:
+#    postgres service → "PostgreSQL" box in architecture diagram
+#                       Stores: users, conversations, messages
+#                       Used by: database.py, models/models.py
+#
+#    redis service    → "Redis" box in architecture diagram
+#                       Stores: cached API responses from Congress.gov,
+#                               Cornell LII, CourtListener, Google Maps
+#                       Used by: redis_client.py, tools/*.py
+# ─────────────────────────────────────────────────────────────
+
+services:
+  postgres:
+    image: postgres:16
+    container_name: lexai-postgres
+    environment:
+      POSTGRES_USER: lexai
+      POSTGRES_PASSWORD: lexai
+      POSTGRES_DB: lexai
+    ports:
+      - "5432:5432"           # matches DATABASE_URL in .env
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U lexai"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  redis:
+    image: redis:7-alpine
+    container_name: lexai-redis
+    ports:
+      - "6379:6379"           # matches REDIS_URL in .env
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+
+volumes:
+  postgres_data:
+  redis_data:
+
+networks:
+  default:
+    name: lexai-network

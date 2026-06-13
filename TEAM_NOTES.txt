@@ -1,0 +1,320 @@
+================================================================================
+  LexAI — TEAM MASTER GUIDE
+  Read this FIRST. Updated: 2026-06-13
+================================================================================
+
+This file tells every team member:
+  1. What is DONE (AI-scaffolded, correct, low-risk)
+  2. What NEEDS HUMAN EFFORT (YOU must write this)
+  3. What AI can HELP WITH but you must VERIFY
+  4. What to do if Copilot/token limits run out
+
+================================================================================
+  SECTION 1 — BUGS THAT WERE FOUND AND FIXED (understand these)
+================================================================================
+
+BUG 1 — Circular Import (FIXED)
+  WHAT: graph.py imported agents, agents imported AgentState from graph.py
+        → Python raises ImportError on startup. App would not start at all.
+  FIX:  AgentState moved to agents/state.py (no internal imports)
+        All agents now import from state.py. graph.py imports from state.py.
+  RULE: Never move AgentState back into graph.py or any agent file.
+
+BUG 2 — Broken Fan-Out (FIXED)
+  WHAT: state_law_agent and case_law_agent had no edges in the graph.
+        Only federal_law_agent was wired. The other two would never run.
+  FIX:  fan_out_research node added. Uses asyncio.gather() to run all
+        3 agents truly in parallel. Much faster than sequential.
+
+BUG 3 — stream_callback Not Serializable (FIXED)
+  WHAT: stream_callback (async function) was in AgentState TypedDict.
+        MemorySaver checkpointer tries to serialize state → crashes.
+  FIX:  Removed from AgentState. Now passed via LangGraph config dict.
+        Agents read it from: config.get("configurable", {}).get("stream_callback")
+  NOTE: Agents currently have a placeholder for this. The WebSocket handler
+        must wire it up correctly (see Section 2 below).
+
+BUG 4 — Missing pdf_export.py (NOT FIXED — TEAM MUST CREATE)
+  WHAT: conversations.py imports from app.utils.pdf_export which doesn't exist.
+        App will fail to import/start until this file is created.
+  FIX:  See Section 2 — MISSING FILES.
+
+================================================================================
+  SECTION 2 — MISSING FILES (TEAM MUST CREATE THESE)
+================================================================================
+
+Priority: CRITICAL — app will not run without these.
+
+FILE 1: backend/app/main.py
+  What it does: FastAPI app entry point. Creates the app, registers routers,
+                runs init_db() on startup.
+  How to create: Ask ChatGPT/Claude:
+    "Write a FastAPI main.py that:
+     - Creates an async FastAPI app
+     - Has a lifespan context that calls init_db() on startup
+     - Registers routers: auth_router, conversations_router, chat_router
+     - Adds CORS middleware allowing http://localhost:3000
+     - Runs with uvicorn on port 8000"
+  Effort: ~30 minutes
+
+FILE 2: backend/app/routers/chat.py  (WebSocket handler — MOST IMPORTANT)
+  What it does: The WebSocket endpoint that:
+    1. Accepts WS connection with JWT token in query params
+    2. Validates token using get_current_user logic
+    3. Creates/loads a Conversation from DB
+    4. Calls check_prompt() on every message
+    5. Adds user message to DB
+    6. Invokes the LangGraph graph with stream_callback wired up
+    7. Saves assistant response to DB
+    8. Updates conversation state (intake → active → completed)
+  How to create: Ask ChatGPT/Claude:
+    "Write a FastAPI WebSocket endpoint at /ws/{conversation_id} that:
+     - Authenticates via JWT token in query param 'token'
+     - Uses LangGraph graph.ainvoke() with thread_id=conversation_id
+     - Streams tokens back to the client as JSON: {type: 'token', content: '...'}
+     - Sends {type: 'done', score: 74} when research is complete
+     - Saves messages to PostgreSQL using SQLAlchemy async session
+     - Calls prompt_guard.check_prompt() before processing each message"
+    Then show it our state.py, graph.py, and models.py files.
+  Effort: 2-4 hours. This is the HARDEST file. Start early.
+
+FILE 3: backend/app/utils/pdf_export.py
+  What it does: Generates a PDF report from a completed conversation.
+  How to create: Ask ChatGPT/Claude:
+    "Write a generate_pdf(conversation) function using reportlab that creates
+     a professional legal report PDF with:
+     - Header: LexAI logo placeholder + 'Legal Case Analysis Report'
+     - Section: Case Summary (from intake_summary)
+     - Section: Case Strength Score (as text: 74/100 - Strong)
+     - Section: Legal Analysis (from research_result['opinion'])
+     - Section: Recommended Next Steps (from research_result['recommended_actions'])
+     - Section: Recommended Attorneys (from research_result['referred_lawyers'])
+     - Footer: Legal disclaimer on every page
+     Returns bytes."
+  Effort: 1-2 hours
+
+FILE 4: backend/requirements.txt
+  What it does: Lists all Python dependencies for pip install.
+  Contents (create this manually):
+    fastapi==0.111.0
+    uvicorn[standard]==0.29.0
+    sqlalchemy[asyncio]==2.0.30
+    asyncpg==0.29.0
+    pydantic-settings==2.2.1
+    pydantic==2.7.0
+    python-jose[cryptography]==3.3.0
+    passlib[bcrypt]==1.7.4
+    redis[asyncio]==5.0.4
+    httpx==0.27.0
+    langchain-openai==0.1.6
+    langgraph==0.1.5
+    reportlab==4.1.0
+  Effort: 10 minutes
+
+FILE 5: docker-compose.yml  (in root d:/LAW/)
+  What it does: Starts PostgreSQL + Redis with one command.
+  How to create: Ask ChatGPT:
+    "Write a docker-compose.yml that starts:
+     - postgres:16 with user=lexai, password=lexai, db=lexai on port 5432
+     - redis:7 on port 6379
+     - Name the network 'lexai-network'"
+  Effort: 20 minutes
+
+FILE 6: .env  (in backend/ — NEVER COMMIT)
+  What it does: Stores all secrets and config.
+  How to create: Copy this template and fill in real keys:
+    DEBUG=False
+    DEMO_MODE=True
+    DATABASE_URL=postgresql+asyncpg://lexai:lexai@localhost:5432/lexai
+    REDIS_URL=redis://localhost:6379
+    SECRET_KEY=<run: python -c "import secrets; print(secrets.token_hex(32))">
+    OPENAI_API_KEY=sk-...
+    OPENAI_MODEL=gpt-4o-mini
+    CONGRESS_API_KEY=<from api.congress.gov/sign-up>
+    COURTLISTENER_API_KEY=
+    GOOGLE_MAPS_API_KEY=<optional for demo>
+    MAX_CONTEXT_MESSAGES=20
+    CACHE_TTL=3600
+  Effort: 15 minutes
+
+FILE 7: frontend/  (React frontend — entire folder)
+  What it does: The user-facing chat interface.
+  See Section 3 for breakdown.
+
+================================================================================
+  SECTION 3 — FRONTEND (React)
+================================================================================
+
+Recommended stack: React + TypeScript + Tailwind CSS + shadcn/ui
+Why: Fastest to build a polished UI. Judges see frontend first.
+
+Key components needed:
+
+  AuthPage.tsx        — Login/Signup form
+                        Simple. Ask AI: "write a React login/signup form
+                        that calls POST /auth/login and stores the JWT"
+
+  Sidebar.tsx         — Conversation list (like ChatGPT)
+                        Calls GET /conversations/, shows title + date
+
+  ChatWindow.tsx      — Main chat area                          ← HARDEST
+                        Renders messages with markdown
+                        Shows typing indicator during streaming
+                        Handles WebSocket connection
+
+  ScoreCard.tsx       — Case Strength Score visual              ← WIN FACTOR
+                        Animated circular progress bar 0-100
+                        Color: red/yellow/green based on score
+                        This is what impresses judges most in the demo
+
+  LawyerCard.tsx      — Shows referred attorneys with ratings
+
+  ExportButton.tsx    — Button that triggers PDF download
+                        Calls GET /conversations/{id}/export-pdf
+
+WebSocket message protocol (agree on this with the team):
+  Client → Server: { type: "message", content: "I was fired yesterday..." }
+  Server → Client: { type: "token", content: "I understand..." }   (streaming)
+  Server → Client: { type: "intake_complete" }                      (research starting)
+  Server → Client: { type: "score", value: 74 }                     (final score)
+  Server → Client: { type: "done" }                                 (complete)
+  Server → Client: { type: "error", message: "..." }                (guard/error)
+
+Effort estimate: 2 days for a decent frontend. Start early.
+Use v0.dev (Vercel's AI) to generate initial component skeletons quickly.
+
+================================================================================
+  SECTION 4 — AI TOOL STRATEGY (save tokens, use AI smartly)
+================================================================================
+
+COPILOT (this tool) — Use for:
+  - Complex logic: agent prompt engineering, graph wiring, bug fixes
+  - Multi-file changes that must be consistent
+  - Understanding how pieces connect
+  - Code review and security analysis
+  SAVE TOKENS: Don't paste entire files back. Say "read file X and fix Y".
+
+CHATGPT/CLAUDE (web, no token limits) — Use for:
+  - Generating boilerplate files from a description (main.py, docker-compose)
+  - Writing the WebSocket handler (give it this TEAM_NOTES.txt + state.py)
+  - Improving system prompts (just paste the prompt text, no code needed)
+  - Writing the React components (scaffold with v0.dev, refine with ChatGPT)
+  - Writing Alembic migrations
+  - Debugging errors: paste the traceback and ask "what's wrong"
+  BEST FOR: One-shot file generation where you give a clear spec.
+
+CURSOR / GITHUB COPILOT AUTOCOMPLETE — Use for:
+  - Fast line-by-line completions while writing the WebSocket handler
+  - React component boilerplate
+  - Type annotations
+
+v0.dev (https://v0.dev) — Use for:
+  - Frontend UI generation (paste a screenshot of the design you want)
+  - This is the fastest way to get a polished React UI
+
+================================================================================
+  SECTION 5 — WHAT CURRENTLY WORKS vs WHAT DOESN'T
+================================================================================
+
+STATUS: COMPLETE + COMMENTED (may still need minor testing)
+  backend/app/config.py           — Settings, env loading
+  backend/app/database.py         — Async DB engine + session
+  backend/app/redis_client.py     — Redis cache helpers
+  backend/app/models/models.py    — ORM models (3 tables)
+  backend/app/schemas/auth.py     — Auth request/response models
+  backend/app/schemas/conversation.py — Conversation response models
+  backend/app/utils/auth.py       — JWT + bcrypt
+  backend/app/middleware/prompt_guard.py — Input validation
+  backend/app/agents/state.py     — AgentState (no circular imports)
+  backend/app/agents/graph.py     — LangGraph workflow (fixed)
+  backend/app/agents/intake_agent.py    — Intake loop
+  backend/app/agents/federal_law_agent.py — Congress.gov search
+  backend/app/agents/state_law_agent.py   — Cornell LII search
+  backend/app/agents/case_law_agent.py    — CourtListener search
+  backend/app/agents/opinion_agent.py    — Synthesis + score
+  backend/app/agents/referral_agent.py   — Lawyer finder
+  backend/app/tools/congress_tool.py     — API + cache + demo mode
+  backend/app/tools/cornell_lii_tool.py  — API + cache + demo mode
+  backend/app/tools/courtlistener_tool.py — API + cache + demo mode
+  backend/app/tools/lawyer_finder_tool.py — Maps API + demo mode
+  backend/app/routers/auth.py            — Signup/login endpoints
+  backend/app/routers/conversations.py   — History endpoints
+  .gitignore                             — Python + Node + secrets
+
+STATUS: STUB EXISTS — logic commented, team must implement
+  backend/app/main.py             ← Docstring has full spec. ~30 min.
+  backend/app/routers/chat.py     ← Docstring has full WS skeleton. ~3-4 hours.
+  backend/app/utils/pdf_export.py ← Docstring has two implementation options.
+  frontend/                       ← frontend/README_FRONTEND.py has full component map.
+
+STATUS: COMPLETE — no changes needed
+  backend/requirements.txt        ← All deps listed, ready to pip install
+  docker-compose.yml              ← Postgres + Redis, ready for docker-compose up -d
+  backend/.env.example            ← Copy to .env and fill in keys
+
+STATUS: WIRED BUT UNTESTED (needs integration testing)
+  stream_callback in agents — needs WebSocket handler to inject it
+  LangGraph fan_out_research — needs real asyncio.gather test
+  intake_agent [INTAKE_COMPLETE] parsing — test with edge cases
+
+================================================================================
+  SECTION 6 — HACKATHON WIN CHECKLIST
+================================================================================
+
+  [_] Demo scenario prepared: pick ONE specific realistic case type
+      (e.g., wrongful termination in Texas). Practice the full flow.
+
+  [_] DEMO_MODE=True set in .env before demo. Verify all _DEMO_DATA
+      returns are realistic for your chosen scenario.
+
+  [_] Case Strength Score shows as colored animated bar in UI
+      This is the #1 visual differentiator. Do not skip this.
+
+  [_] PDF export works and looks professional
+      Print one out or show it on screen during demo.
+
+  [_] WebSocket streaming works (tokens appear one by one like ChatGPT)
+      Nothing kills a demo like waiting 30 seconds for a response.
+
+  [_] Past conversation history works (sidebar, click to reload)
+      Shows the product is "real" and stateful, not a one-off chat.
+
+  [_] Have a 30-second pitch ready:
+      "LexAI uses 5 specialized AI agents that simultaneously search
+       federal law, state law, and 4 million court cases to give
+       anyone in the US a professional legal analysis in minutes —
+       including a case strength score and attorney referrals."
+
+  [_] Prepare answers to judge questions:
+      Q: "How is this different from ChatGPT?"
+      A: Real-time search of Congress.gov, Cornell LII, CourtListener.
+         Structured agent pipeline. Verifiable citations. Case score.
+      Q: "Is this legal advice?"
+      A: No — it's legal information and research. We recommend attorneys.
+      Q: "How do you ensure accuracy?"
+      A: Every claim traces back to a real API source (shown to user).
+         We display sources and citations, not just LLM output.
+
+================================================================================
+  SECTION 7 — STARTUP COMMANDS (once all files are created)
+================================================================================
+
+  # 1. Start infrastructure
+  docker-compose up -d
+
+  # 2. Install Python deps
+  cd backend
+  pip install -r requirements.txt
+
+  # 3. Start backend
+  uvicorn app.main:app --reload --port 8000
+
+  # 4. Start frontend
+  cd ../frontend
+  npm install
+  npm run dev
+
+  # Test the API
+  Open http://localhost:8000/docs  (FastAPI auto-generated UI)
+
+================================================================================
