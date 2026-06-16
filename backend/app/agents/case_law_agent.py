@@ -30,13 +30,15 @@ AI USAGE NOTE:
   Ask an AI: "write a function that builds an optimal CourtListener boolean
   search query from a legal incident description and US state".
 """
-from langchain_openai import ChatOpenAI
-from langchain_core.messages import SystemMessage, HumanMessage
-from app.config import get_settings
+
+import json
+
 # Import from state.py, NOT graph.py — avoids circular import
 from app.agents.state import AgentState
+from app.config import get_settings
 from app.tools.courtlistener_tool import search_courtlistener
-import json
+from langchain_core.messages import HumanMessage, SystemMessage
+from langchain_openai import ChatOpenAI
 
 settings = get_settings()
 
@@ -71,7 +73,7 @@ async def run_case_law_agent(state: AgentState) -> dict:
 
     stream_cb = state.get("stream_callback")
     if stream_cb:
-        await stream_cb(f"\n🔍 **Case Law Research complete**\n")
+        await stream_cb("\n🔍 **Case Law Research complete**\n")
 
     return {
         "case_law_results": [

@@ -33,6 +33,7 @@ TEAM — WHAT YOU MUST DO:
   2. Update _DEMO_DATA for your specific demo use case
   3. Test with a real query: python -c "import asyncio; from app.tools.congress_tool import search_congress; print(asyncio.run(search_congress('employment discrimination', 'Texas')))"
 """
+
 import httpx
 from app.config import get_settings
 from app.redis_client import cache_get, cache_set, make_cache_key

@@ -1,0 +1,22 @@
+# Local virtualenv — must NOT leak into the image (wrong arch, overrides uv sync)
+.venv/
+venv/
+env/
+
+# Secrets — never bake into an image
+.env
+.env.local
+.env.*.local
+*.key
+
+# Python caches
+__pycache__/
+*.py[cod]
+*.pyo
+
+# Tooling / OS noise
+.git/
+.gitignore
+.DS_Store
+*.log
+.ipynb_checkpoints/

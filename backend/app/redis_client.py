@@ -27,10 +27,12 @@ TEAM — WHAT YOU MUST DO:
 AI USAGE NOTE:
   This file is complete. No changes needed. Low priority.
 """
+
+import hashlib
+import json
+
 import redis.asyncio as aioredis
 from app.config import get_settings
-import json
-import hashlib
 
 settings = get_settings()
 
@@ -59,7 +61,7 @@ def make_cache_key(prefix: str, **kwargs) -> str:
     Example: make_cache_key("congress", query="civil rights", state="TX")
              → "congress:8f3a1b2c9d4e5f6a"
     """
-    raw = json.dumps(kwargs, sort_keys=True)           # sort_keys = same dict always same string
+    raw = json.dumps(kwargs, sort_keys=True)  # sort_keys = same dict always same string
     digest = hashlib.sha256(raw.encode()).hexdigest()[:16]  # first 16 chars of SHA256
     return f"{prefix}:{digest}"
 

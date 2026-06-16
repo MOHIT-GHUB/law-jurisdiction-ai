@@ -25,8 +25,10 @@ TEAM — WHAT YOU MUST DO:
 AI USAGE NOTE:
   This file is stable. Low priority for changes.
 """
-from pydantic import BaseModel, field_validator
+
 import re
+
+from pydantic import BaseModel, field_validator
 
 
 class SignupRequest(BaseModel):
@@ -34,6 +36,7 @@ class SignupRequest(BaseModel):
     Validates the signup request body.
     Pydantic runs field_validators before the route handler runs.
     """
+
     username: str
     password: str
 
@@ -57,6 +60,7 @@ class SignupRequest(BaseModel):
 
 class LoginRequest(BaseModel):
     """Simple login body. No validation needed — wrong credentials handled in route."""
+
     username: str
     password: str
 
@@ -66,6 +70,7 @@ class TokenResponse(BaseModel):
     What the frontend receives after successful signup or login.
     Store access_token in localStorage and send as: Authorization: Bearer <token>
     """
+
     access_token: str
     token_type: str = "bearer"  # always "bearer" for JWT
-    username: str               # so frontend knows who is logged in immediately
+    username: str  # so frontend knows who is logged in immediately

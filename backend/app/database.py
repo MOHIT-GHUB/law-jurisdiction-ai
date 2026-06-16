@@ -34,19 +34,20 @@ AI USAGE NOTE:
   To generate Alembic migration: paste the old and new model class to
   ChatGPT and ask "write an Alembic upgrade/downgrade migration for this change".
 """
-from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession, async_sessionmaker
-from sqlalchemy.orm import DeclarativeBase
+
 from app.config import get_settings
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
+from sqlalchemy.orm import DeclarativeBase
 
 settings = get_settings()
 
 # Connection pool — shared across the entire application lifetime
 engine = create_async_engine(
     settings.DATABASE_URL,
-    echo=settings.DEBUG,   # logs every SQL query when DEBUG=True — useful for debugging
-    pool_pre_ping=True,    # verify connection alive before using (important for long-running apps)
-    pool_size=10,          # persistent connections kept warm
-    max_overflow=20,       # burst capacity for high traffic
+    echo=settings.DEBUG,  # logs every SQL query when DEBUG=True — useful for debugging
+    pool_pre_ping=True,  # verify connection alive before using (important for long-running apps)
+    pool_size=10,  # persistent connections kept warm
+    max_overflow=20,  # burst capacity for high traffic
 )
 
 # Session factory — each call to AsyncSessionLocal() gives a fresh session
@@ -59,6 +60,7 @@ AsyncSessionLocal = async_sessionmaker(
 
 class Base(DeclarativeBase):
     """Parent class for all ORM models. Do not put logic here."""
+
     pass
 
 
@@ -75,12 +77,12 @@ async def get_db():
     async with AsyncSessionLocal() as session:
         try:
             yield session
-            await session.commit()    # persist all changes made during this request
+            await session.commit()  # persist all changes made during this request
         except Exception:
             await session.rollback()  # undo partial changes on any error
             raise
         finally:
-            await session.close()     # always return connection to the pool
+            await session.close()  # always return connection to the pool
 
 
 async def init_db():

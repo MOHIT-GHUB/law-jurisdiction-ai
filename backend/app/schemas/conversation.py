@@ -33,8 +33,10 @@ TEAM — WHAT YOU MUST DO:
 AI USAGE NOTE:
   Stable file. No changes needed unless you add new DB columns.
 """
-from pydantic import BaseModel
+
 from datetime import datetime
+
+from pydantic import BaseModel
 
 
 class ConversationOut(BaseModel):
@@ -42,20 +44,22 @@ class ConversationOut(BaseModel):
     Lightweight conversation summary for the sidebar list.
     Does not include messages (too heavy to load for every item).
     """
+
     id: str
-    title: str | None       # short label like "Employment case - Austin TX"
-    state: str              # "intake" | "active" | "completed"
+    title: str | None  # short label like "Employment case - Austin TX"
+    state: str  # "intake" | "active" | "completed"
     created_at: datetime
-    intake_summary: dict | None = None      # the structured case info
-    research_result: dict | None = None     # includes case_strength_score
+    intake_summary: dict | None = None  # the structured case info
+    research_result: dict | None = None  # includes case_strength_score
 
     model_config = {"from_attributes": True}  # enable ORM → Pydantic conversion
 
 
 class MessageOut(BaseModel):
     """Individual chat message shape returned by the API."""
+
     id: str
-    role: str       # "user" | "assistant"
+    role: str  # "user" | "assistant"
     content: str
     created_at: datetime
 
@@ -67,4 +71,5 @@ class ConversationWithMessages(ConversationOut):
     Full conversation detail including all messages.
     Used when user opens a past conversation to continue or review it.
     """
+
     messages: list[MessageOut] = []  # empty list default (no messages yet)

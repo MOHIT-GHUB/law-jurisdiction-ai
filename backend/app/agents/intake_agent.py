@@ -1,4 +1,4 @@
-"""
+r"""
 agents/intake_agent.py — First agent in the pipeline. Gathers case information.
 
 RESPONSIBILITY:
@@ -46,11 +46,12 @@ AI USAGE NOTE:
   For _parse_intake_summary robustness, ask: "rewrite this JSON parser to
   handle nested braces and malformed output gracefully"
 """
-from langchain_openai import ChatOpenAI
-from langchain_core.messages import SystemMessage, HumanMessage, AIMessage
-from app.config import get_settings
+
 # Import from state.py, NOT graph.py — avoids circular import
 from app.agents.state import AgentState
+from app.config import get_settings
+from langchain_core.messages import AIMessage, HumanMessage, SystemMessage
+from langchain_openai import ChatOpenAI
 
 settings = get_settings()
 
@@ -78,10 +79,12 @@ Example final response:
 
 
 def _parse_intake_summary(response_text: str) -> dict | None:
-    import json, re
+    import json
+    import re
+
     if "[INTAKE_COMPLETE]" not in response_text:
         return None
-    match = re.search(r'\{[^}]+\}', response_text, re.DOTALL)
+    match = re.search(r"\{[^}]+\}", response_text, re.DOTALL)
     if match:
         try:
             return json.loads(match.group())
@@ -98,7 +101,7 @@ async def run_intake_agent(state: AgentState) -> dict:
     )
 
     # Build message history (sliding window)
-    history = state.get("messages", [])[-settings.MAX_CONTEXT_MESSAGES:]
+    history = state.get("messages", [])[-settings.MAX_CONTEXT_MESSAGES :]
     lc_messages = [SystemMessage(content=INTAKE_SYSTEM_PROMPT)]
     for msg in history:
         if msg["role"] == "user":
@@ -125,7 +128,10 @@ async def run_intake_agent(state: AgentState) -> dict:
 
     # Clean response (remove JSON block from user-facing message)
     import re
-    clean_response = re.sub(r'\{[^}]+\}', '', response_text).replace("[INTAKE_COMPLETE]", "").strip()
+
+    clean_response = (
+        re.sub(r"\{[^}]+\}", "", response_text).replace("[INTAKE_COMPLETE]", "").strip()
+    )
 
     new_messages = history + [{"role": "assistant", "content": clean_response}]
 
