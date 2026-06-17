@@ -1,6 +1,7 @@
 """
 CourtListener tool — searches past court cases by keyword + state.
 """
+
 import httpx
 from app.config import get_settings
 from app.redis_client import cache_get, cache_set, make_cache_key
@@ -38,7 +39,7 @@ async def search_courtlistener(query: str, state: str = "") -> list[dict]:
 
     params = {
         "q": query,
-        "type": "o",        # opinions
+        "type": "o",  # opinions
         "order_by": "score desc",
         "stat_Precedential": "on",
     }

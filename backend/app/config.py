@@ -17,8 +17,10 @@ AI USAGE NOTE:
   You can ask ChatGPT/Claude to generate a .env.example file from this class.
   Just paste the class and say "make me a .env.example with placeholder values".
 """
-from pydantic_settings import BaseSettings
+
 from functools import lru_cache
+
+from pydantic_settings import BaseSettings
 
 
 class Settings(BaseSettings):
@@ -48,8 +50,8 @@ class Settings(BaseSettings):
     # TEAM: MUST generate a real random key before demo/deployment
     # Run: python -c "import secrets; print(secrets.token_hex(32))"
     SECRET_KEY: str = "change-this-in-production-use-openssl-rand-hex-32"
-    ALGORITHM: str = "HS256"                          # standard JWT signing algorithm
-    ACCESS_TOKEN_EXPIRE_MINUTES: int = 60 * 24 * 7   # tokens last 7 days
+    ALGORITHM: str = "HS256"  # standard JWT signing algorithm
+    ACCESS_TOKEN_EXPIRE_MINUTES: int = 60 * 24 * 7  # tokens last 7 days
 
     # ── LLM (OpenAI) ──────────────────────────────────────────────────────────
     # All 5 agents (intake, federal, state, case, opinion, referral) use this.
@@ -76,7 +78,7 @@ class Settings(BaseSettings):
         extra = "ignore"  # ignore unknown keys in .env — safe for team members adding custom vars
 
 
-@lru_cache()
+@lru_cache
 def get_settings() -> Settings:
     """
     Returns a cached singleton Settings instance.

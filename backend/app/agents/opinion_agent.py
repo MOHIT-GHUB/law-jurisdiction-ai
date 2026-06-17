@@ -45,13 +45,15 @@ AI USAGE NOTE:
   member refine the exact wording every few test runs. No code changes needed
   — just update SYSTEM_PROMPT. Use GPT-4 to help write better prompts.
 """
-from langchain_openai import ChatOpenAI
-from langchain_core.messages import SystemMessage, HumanMessage
-from app.config import get_settings
-# Import from state.py, NOT graph.py — avoids circular import
-from app.agents.state import AgentState
+
 import json
 import re
+
+# Import from state.py, NOT graph.py — avoids circular import
+from app.agents.state import AgentState
+from app.config import get_settings
+from langchain_core.messages import HumanMessage, SystemMessage
+from langchain_openai import ChatOpenAI
 
 settings = get_settings()
 
@@ -60,7 +62,7 @@ SYSTEM_PROMPT = """You are a senior US legal analyst synthesizing research from 
 Given:
 - The user's case details (intake summary)
 - Federal law findings
-- State law findings  
+- State law findings
 - Relevant past case law
 
 Produce a comprehensive legal opinion that includes:
@@ -124,7 +126,9 @@ async def run_opinion_agent(state: AgentState) -> dict:
             pass
 
     # Remove JSON block from the displayed opinion
-    clean_opinion = re.sub(r'\{[^}]*"case_strength_score"[^}]*\}', '', opinion_text, flags=re.DOTALL).strip()
+    clean_opinion = re.sub(
+        r'\{[^}]*"case_strength_score"[^}]*\}', "", opinion_text, flags=re.DOTALL
+    ).strip()
 
     return {
         "opinion": clean_opinion,

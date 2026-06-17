@@ -44,13 +44,16 @@ AI USAGE NOTE:
   This file is solid. You can ask Cursor/ChatGPT to add a new column
   by saying "add an email column to the User model in models.py".
 """
+
+import enum
 import uuid
 from datetime import datetime
-from sqlalchemy import String, DateTime, ForeignKey, Text, Enum as SAEnum
-from sqlalchemy.orm import Mapped, mapped_column, relationship
-from sqlalchemy.dialects.postgresql import JSONB
+
 from app.database import Base
-import enum
+from sqlalchemy import DateTime, ForeignKey, String, Text
+from sqlalchemy import Enum as SAEnum
+from sqlalchemy.dialects.postgresql import JSONB
+from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 
 class ConversationState(str, enum.Enum):
@@ -58,9 +61,10 @@ class ConversationState(str, enum.Enum):
     Tracks where a conversation is in the pipeline.
     str enum means it stores as a plain string in Postgres (not integer).
     """
-    INTAKE = "intake"       # agent is collecting incident info
-    ACTIVE = "active"       # research agents are running
-    COMPLETED = "completed" # analysis delivered, conversation archived
+
+    INTAKE = "intake"  # agent is collecting incident info
+    ACTIVE = "active"  # research agents are running
+    COMPLETED = "completed"  # analysis delivered, conversation archived
 
 
 class User(Base):
@@ -73,7 +77,9 @@ class User(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
 
     # ORM relationship: user.conversations gives all their conversations
-    conversations: Mapped[list["Conversation"]] = relationship("Conversation", back_populates="user")
+    conversations: Mapped[list["Conversation"]] = relationship(
+        "Conversation", back_populates="user"
+    )
 
 
 class Conversation(Base):

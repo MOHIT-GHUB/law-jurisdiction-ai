@@ -1,6 +1,7 @@
 """
 Cornell LII tool — searches state statutes via LII's free API.
 """
+
 import httpx
 from app.config import get_settings
 from app.redis_client import cache_get, cache_set, make_cache_key

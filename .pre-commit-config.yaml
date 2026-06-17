@@ -1,0 +1,29 @@
+# Pre-commit hooks for backend of LexAI.
+# Setup:  make hooks   (or: uv run --project backend pre-commit install)
+# Run manually on everything:  make pre-commit
+default_install_hook_types: [pre-commit]
+
+repos:
+  # Ruff — lint + format the backend Python code.
+  # Pinned to match the `ruff` dev dependency in backend/pyproject.toml.
+  - repo: https://github.com/astral-sh/ruff-pre-commit
+    rev: v0.15.17
+    hooks:
+      - id: ruff
+        name: ruff (lint + autofix)
+        args: [--fix]
+        files: ^backend/
+      - id: ruff-format
+        name: ruff (format)
+        files: ^backend/
+
+  # General hygiene — runs across the whole repo.
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v5.0.0
+    hooks:
+      - id: trailing-whitespace
+      - id: end-of-file-fixer
+      - id: check-yaml
+      - id: check-toml
+      - id: check-merge-conflict
+      - id: check-added-large-files

@@ -34,30 +34,68 @@ AI USAGE NOTE:
   "add more prompt injection patterns to this regex list"
   — this is low effort, high impact for judges noticing security awareness.
 """
+
 import re
-from typing import Optional
 
 # Patterns that are ALWAYS blocked — injection attempts and abuse
 # re.IGNORECASE means KILL/Kill/kill all match
 BLOCKED_PATTERNS = [
     r"\b(bomb|weapon|kill|murder|hack|exploit|jailbreak)\b",
     r"ignore (previous|all) instructions",  # classic prompt injection
-    r"you are now",                          # persona hijacking attempt
+    r"you are now",  # persona hijacking attempt
     r"act as (a |an )?(different|new|evil|dan)",  # DAN-style jailbreak
-    r"system prompt",                        # trying to extract system prompt
+    r"system prompt",  # trying to extract system prompt
 ]
 
 # LEGAL_KEYWORDS kept here for future use — could use these to enforce
 # topic relevance after intake is complete (not currently enforced to avoid
 # blocking legitimate user phrasing)
 LEGAL_KEYWORDS = [
-    "law", "legal", "court", "jurisdiction", "rights", "case", "sue", "lawsuit",
-    "attorney", "lawyer", "judge", "statute", "regulation", "offense", "crime",
-    "contract", "violation", "complaint", "evidence", "defendant", "plaintiff",
-    "police", "arrest", "discrimination", "harassment", "injury", "liability",
+    "law",
+    "legal",
+    "court",
+    "jurisdiction",
+    "rights",
+    "case",
+    "sue",
+    "lawsuit",
+    "attorney",
+    "lawyer",
+    "judge",
+    "statute",
+    "regulation",
+    "offense",
+    "crime",
+    "contract",
+    "violation",
+    "complaint",
+    "evidence",
+    "defendant",
+    "plaintiff",
+    "police",
+    "arrest",
+    "discrimination",
+    "harassment",
+    "injury",
+    "liability",
     # Common words during intake phase — always allow
-    "incident", "happened", "location", "state", "city", "witness", "proof",
-    "date", "time", "help", "need", "what", "how", "my", "i", "yes", "no",
+    "incident",
+    "happened",
+    "location",
+    "state",
+    "city",
+    "witness",
+    "proof",
+    "date",
+    "time",
+    "help",
+    "need",
+    "what",
+    "how",
+    "my",
+    "i",
+    "yes",
+    "no",
 ]
 
 # Pre-compile the regex once at module load (faster than re.compile on every call)
@@ -66,7 +104,8 @@ _blocked_re = re.compile("|".join(BLOCKED_PATTERNS), re.IGNORECASE)
 
 class PromptGuardResult:
     """Simple result object. Check .allowed first, then .reason for the error message."""
-    def __init__(self, allowed: bool, reason: Optional[str] = None):
+
+    def __init__(self, allowed: bool, reason: str | None = None):
         self.allowed = allowed
         self.reason = reason
 

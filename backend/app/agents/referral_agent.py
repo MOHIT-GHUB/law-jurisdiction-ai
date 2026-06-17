@@ -39,13 +39,15 @@ AI USAGE NOTE:
   "expand this keyword-based specialty mapper to cover 20 common US
   legal case types" and show it the current function.
 """
-from langchain_openai import ChatOpenAI
-from langchain_core.messages import SystemMessage, HumanMessage
-from app.config import get_settings
+
+import json
+
 # Import from state.py, NOT graph.py — avoids circular import
 from app.agents.state import AgentState
+from app.config import get_settings
 from app.tools.lawyer_finder_tool import find_lawyers_near
-import json
+from langchain_core.messages import HumanMessage, SystemMessage
+from langchain_openai import ChatOpenAI
 
 settings = get_settings()
 

@@ -51,7 +51,7 @@ stream_callback SERIALIZATION FIX (BUG THAT WAS HERE BEFORE):
   Agents read it from config, not from state.
 
 TEAM — WHAT YOU MUST DO:
-  1. Install dependencies: pip install langgraph langchain-openai
+  1. Install dependencies: uv sync  (langgraph + langchain-openai are in pyproject.toml)
   2. The graph is compiled once at module import (bottom of file)
      and reused across all WebSocket connections — this is intentional.
   3. To invoke the graph from the WebSocket handler:
@@ -73,28 +73,28 @@ AI USAGE NOTE:
   add a new agent node, ask an AI: "add a [NAME] node to this LangGraph
   StateGraph, called after opinion_agent". Show it this file.
 """
-from typing import TypedDict
-from langgraph.graph import StateGraph, END
-from langgraph.checkpoint.memory import MemorySaver
 
-# ── Import AgentState from dedicated state file (fixes circular import) ───────
-# agents/state.py has NO imports from any agent file — that's the key.
-from app.agents.state import AgentState
+import asyncio
+
+from app.agents.case_law_agent import run_case_law_agent
+from app.agents.federal_law_agent import run_federal_law_agent
 
 # ── Import agent runner functions ─────────────────────────────────────────────
 # These imports are safe now because agent files import AgentState from
 # state.py, NOT from graph.py. No circular dependency.
 from app.agents.intake_agent import run_intake_agent
-from app.agents.federal_law_agent import run_federal_law_agent
-from app.agents.state_law_agent import run_state_law_agent
-from app.agents.case_law_agent import run_case_law_agent
 from app.agents.opinion_agent import run_opinion_agent
 from app.agents.referral_agent import run_referral_agent
 
-import asyncio
-
+# ── Import AgentState from dedicated state file (fixes circular import) ───────
+# agents/state.py has NO imports from any agent file — that's the key.
+from app.agents.state import AgentState
+from app.agents.state_law_agent import run_state_law_agent
+from langgraph.checkpoint.memory import MemorySaver
+from langgraph.graph import END, StateGraph
 
 # ── Dispatcher node: runs all 3 research agents in parallel ──────────────────
+
 
 async def fan_out_research(state: AgentState, config: dict) -> dict:
     """
@@ -122,6 +122,7 @@ async def fan_out_research(state: AgentState, config: dict) -> dict:
 
 # ── Routing: decides whether to keep collecting intake or start research ──────
 
+
 def should_research(state: AgentState) -> str:
     """
     After intake_agent runs, check if all required info has been collected.
@@ -135,6 +136,7 @@ def should_research(state: AgentState) -> str:
 
 # ── Graph construction ────────────────────────────────────────────────────────
 
+
 def build_graph():
     """
     Builds and compiles the LangGraph StateGraph.
@@ -144,7 +146,7 @@ def build_graph():
 
     # Register all nodes (name → async function)
     builder.add_node("intake_agent", run_intake_agent)
-    builder.add_node("fan_out_research", fan_out_research)   # parallel dispatcher
+    builder.add_node("fan_out_research", fan_out_research)  # parallel dispatcher
     builder.add_node("opinion_agent", run_opinion_agent)
     builder.add_node("referral_agent", run_referral_agent)
 
@@ -156,8 +158,8 @@ def build_graph():
         "intake_agent",
         should_research,
         {
-            "intake": "intake_agent",      # loop: keep asking user for info
-            "research": "fan_out_research", # proceed: all info collected
+            "intake": "intake_agent",  # loop: keep asking user for info
+            "research": "fan_out_research",  # proceed: all info collected
         },
     )
 

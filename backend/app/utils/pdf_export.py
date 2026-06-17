@@ -69,7 +69,7 @@ utils/pdf_export.py — Generates a downloadable PDF legal report.
 
   RECOMMENDATION: Use weasyprint if the team knows HTML/CSS.
     It's much easier to make it look polished (just write HTML).
-    Add to requirements.txt: weasyprint==61.2
+    Already declared as an optional extra — install with: uv sync --extra pdf-html
 
 ═══════════════════════════════════════════════════════════════
   FUNCTION SIGNATURE (do not change — called from conversations.py)

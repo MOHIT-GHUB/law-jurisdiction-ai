@@ -30,17 +30,19 @@ AI USAGE NOTE:
   the system prompt for common case types (employment, civil rights, etc.)
   This gives the LLM better examples to follow (few-shot prompting).
 """
-from langchain_openai import ChatOpenAI
-from langchain_core.messages import SystemMessage, HumanMessage
-from app.config import get_settings
+
+import json
+
 # Import from state.py, NOT graph.py — avoids circular import
 from app.agents.state import AgentState
+from app.config import get_settings
 from app.tools.congress_tool import search_congress
-import json
+from langchain_core.messages import HumanMessage, SystemMessage
+from langchain_openai import ChatOpenAI
 
 settings = get_settings()
 
-SYSTEM_PROMPT = """You are a federal law research specialist. 
+SYSTEM_PROMPT = """You are a federal law research specialist.
 Given a legal incident summary, identify the most relevant federal statutes and regulations.
 For each law found, provide:
 - Statute name and citation (e.g., 42 U.S.C. § 1983)
@@ -61,14 +63,16 @@ async def run_federal_law_agent(state: AgentState) -> dict:
     llm = ChatOpenAI(model=settings.OPENAI_MODEL, api_key=settings.OPENAI_API_KEY)
     messages = [
         SystemMessage(content=SYSTEM_PROMPT),
-        HumanMessage(content=f"Case summary: {json.dumps(intake)}\n\nRaw federal data: {json.dumps(raw_results[:5])}"),
+        HumanMessage(
+            content=f"Case summary: {json.dumps(intake)}\n\nRaw federal data: {json.dumps(raw_results[:5])}"
+        ),
     ]
 
     response = await llm.ainvoke(messages)
 
     stream_cb = state.get("stream_callback")
     if stream_cb:
-        await stream_cb(f"\n📋 **Federal Law Research complete**\n")
+        await stream_cb("\n📋 **Federal Law Research complete**\n")
 
     return {
         "federal_law_results": [

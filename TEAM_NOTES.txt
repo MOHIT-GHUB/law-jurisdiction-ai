@@ -93,32 +93,22 @@ FILE 3: backend/app/utils/pdf_export.py
      Returns bytes."
   Effort: 1-2 hours
 
-FILE 4: backend/requirements.txt
-  What it does: Lists all Python dependencies for pip install.
-  Contents (create this manually):
-    fastapi==0.111.0
-    uvicorn[standard]==0.29.0
-    sqlalchemy[asyncio]==2.0.30
-    asyncpg==0.29.0
-    pydantic-settings==2.2.1
-    pydantic==2.7.0
-    python-jose[cryptography]==3.3.0
-    passlib[bcrypt]==1.7.4
-    redis[asyncio]==5.0.4
-    httpx==0.27.0
-    langchain-openai==0.1.6
-    langgraph==0.1.5
-    reportlab==4.1.0
-  Effort: 10 minutes
+FILE 4: backend/pyproject.toml  (+ backend/uv.lock)
+  What it does: Declares all Python dependencies, managed with uv.
+  Already created and locked. To install: cd backend && uv sync
+  uv.lock pins exact, reproducible versions — commit both files.
+  NOTE: a few versions were relaxed from the original pins because they
+  were mutually unsatisfiable / broke on Python 3.12 (langchain trio,
+  pydantic>=2.8). The lockfile captures the resolved set.
+  Effort: done
 
-FILE 5: docker-compose.yml  (in root d:/LAW/)
-  What it does: Starts PostgreSQL + Redis with one command.
-  How to create: Ask ChatGPT:
-    "Write a docker-compose.yml that starts:
-     - postgres:16 with user=lexai, password=lexai, db=lexai on port 5432
-     - redis:7 on port 6379
-     - Name the network 'lexai-network'"
-  Effort: 20 minutes
+FILE 5: docker-compose.yml  (in repo root)
+  What it does: Starts PostgreSQL + Redis + the backend server with one
+                command:  docker compose up -d --build
+  Already created. The `server` service builds backend/Dockerfile (uv-based),
+  bind-mounts the source for --reload, loads backend/.env, and overrides
+  DATABASE_URL/REDIS_URL to the in-network service names (postgres/redis).
+  Effort: done
 
 FILE 6: .env  (in backend/ — NEVER COMMIT)
   What it does: Stores all secrets and config.
@@ -248,8 +238,8 @@ STATUS: STUB EXISTS — logic commented, team must implement
   frontend/                       ← frontend/README_FRONTEND.py has full component map.
 
 STATUS: COMPLETE — no changes needed
-  backend/requirements.txt        ← All deps listed, ready to pip install
-  docker-compose.yml              ← Postgres + Redis, ready for docker-compose up -d
+  backend/pyproject.toml + uv.lock ← All deps locked, ready for `uv sync`
+  docker-compose.yml              ← Postgres + Redis + server, ready for docker compose up -d --build
   backend/.env.example            ← Copy to .env and fill in keys
 
 STATUS: WIRED BUT UNTESTED (needs integration testing)
@@ -299,18 +289,18 @@ STATUS: WIRED BUT UNTESTED (needs integration testing)
   SECTION 7 — STARTUP COMMANDS (once all files are created)
 ================================================================================
 
-  # 1. Start infrastructure
-  docker-compose up -d
+  # 1. Start the whole backend stack (postgres + redis + server)
+  docker compose up -d --build
+  #    API docs → http://localhost:8000/docs
+  #    Source is bind-mounted, so --reload picks up your edits live.
 
-  # 2. Install Python deps
-  cd backend
-  pip install -r requirements.txt
+  # (Alternative — run the server on your host instead of in Docker)
+  #   docker compose up -d postgres redis        # just the infra
+  #   cd backend && uv sync
+  #   uv run uvicorn app.main:app --reload --port 8000
 
-  # 3. Start backend
-  uvicorn app.main:app --reload --port 8000
-
-  # 4. Start frontend
-  cd ../frontend
+  # 2. Start frontend
+  cd frontend
   npm install
   npm run dev
 

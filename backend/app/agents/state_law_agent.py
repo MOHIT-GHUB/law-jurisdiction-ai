@@ -31,13 +31,15 @@ AI USAGE NOTE:
   If Cornell LII API is unreliable, ask an AI to write a scraper for
   specific state code URLs. Or use the Justia API as an alternative.
 """
-from langchain_openai import ChatOpenAI
-from langchain_core.messages import SystemMessage, HumanMessage
-from app.config import get_settings
+
+import json
+
 # Import from state.py, NOT graph.py — avoids circular import
 from app.agents.state import AgentState
+from app.config import get_settings
 from app.tools.cornell_lii_tool import search_cornell_lii
-import json
+from langchain_core.messages import HumanMessage, SystemMessage
+from langchain_openai import ChatOpenAI
 
 settings = get_settings()
 
@@ -71,10 +73,15 @@ async def run_state_law_agent(state: AgentState) -> dict:
 
     stream_cb = state.get("stream_callback")
     if stream_cb:
-        await stream_cb(f"\n⚖️ **State Law Research complete**\n")
+        await stream_cb("\n⚖️ **State Law Research complete**\n")
 
     return {
         "state_law_results": [
-            {"source": "Cornell LII", "state": us_state, "raw": raw_results, "analysis": response.content}
+            {
+                "source": "Cornell LII",
+                "state": us_state,
+                "raw": raw_results,
+                "analysis": response.content,
+            }
         ]
     }

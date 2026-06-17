@@ -69,11 +69,34 @@ HOW TO RUN (after implementing):
   Then open: http://localhost:8000/docs  (auto-generated API explorer)
 """
 
-# ── TODO: implement this file ─────────────────────────────────────────────────
-# Effort: ~30 minutes. Ask ChatGPT: "Write a FastAPI main.py that:
-#   - Has a lifespan context that calls init_db() on startup
-#   - Registers 3 routers: auth, conversations, chat
-#   - Adds CORS for http://localhost:3000
-#   - Has a /health endpoint returning {status: ok}
-# Then show it this file's docstring for context."
-raise NotImplementedError("main.py not yet implemented — see docstring above")
+from contextlib import asynccontextmanager
+
+from app.config import get_settings
+from app.database import init_db
+from app.routers import auth, chat, conversations
+from fastapi import FastAPI
+
+
+@asynccontextmanager
+async def lifespan(_: FastAPI):
+    await init_db()
+    yield
+
+
+def create_app():
+    settings = get_settings()
+    app = FastAPI(title=settings.APP_NAME, lifespan=lifespan)
+
+    app.include_router(auth.router)
+    app.include_router(chat.router)
+    app.include_router(conversations.router)
+
+    return app
+
+
+app = create_app()
+
+
+@app.get("/")
+async def health_check():
+    return {"message": "healthy. Seattle Slew is ready!"}

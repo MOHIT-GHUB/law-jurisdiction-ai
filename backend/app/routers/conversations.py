@@ -35,14 +35,15 @@ AI USAGE NOTE:
   PDF generation is boilerplate. Paste the Conversation model schema to
   ChatGPT and ask for a reportlab PDF generator. Should take < 30 minutes.
 """
-from fastapi import APIRouter, Depends, HTTPException
-from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select
+
 from app.database import get_db
-from app.models.models import User, Conversation
+from app.models.models import Conversation, User
 from app.schemas.conversation import ConversationOut, ConversationWithMessages
 from app.utils.auth import get_current_user
 from app.utils.pdf_export import generate_pdf  # TEAM: create this file first!
+from fastapi import APIRouter, Depends, HTTPException
+from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
 
 router = APIRouter(prefix="/conversations", tags=["conversations"])
 
@@ -121,11 +122,14 @@ async def export_conversation_pdf(
         raise HTTPException(status_code=404, detail="Conversation not found")
 
     from fastapi.responses import Response
+
     pdf_bytes = generate_pdf(conv)  # TEAM: implement this in utils/pdf_export.py
     return Response(
         content=pdf_bytes,
         media_type="application/pdf",
-        headers={"Content-Disposition": f"attachment; filename=lexai-report-{conversation_id[:8]}.pdf"},
+        headers={
+            "Content-Disposition": f"attachment; filename=lexai-report-{conversation_id[:8]}.pdf"
+        },
     )
 
 
@@ -136,84 +140,6 @@ async def delete_conversation(
     db: AsyncSession = Depends(get_db),
 ):
     """Delete a conversation. Only the owner can delete it (user_id check)."""
-    result = await db.execute(
-        select(Conversation).where(
-            Conversation.id == conversation_id,
-            Conversation.user_id == current_user.id,
-        )
-    )
-    conv = result.scalar_one_or_none()
-    if not conv:
-        raise HTTPException(status_code=404, detail="Conversation not found")
-    await db.delete(conv)
-
-
-@router.get("/", response_model=list[ConversationOut])
-async def list_conversations(
-    current_user: User = Depends(get_current_user),
-    db: AsyncSession = Depends(get_db),
-):
-    result = await db.execute(
-        select(Conversation)
-        .where(Conversation.user_id == current_user.id)
-        .order_by(Conversation.created_at.desc())
-    )
-    return result.scalars().all()
-
-
-@router.get("/{conversation_id}", response_model=ConversationWithMessages)
-async def get_conversation(
-    conversation_id: str,
-    current_user: User = Depends(get_current_user),
-    db: AsyncSession = Depends(get_db),
-):
-    result = await db.execute(
-        select(Conversation).where(
-            Conversation.id == conversation_id,
-            Conversation.user_id == current_user.id,
-        )
-    )
-    conv = result.scalar_one_or_none()
-    if not conv:
-        raise HTTPException(status_code=404, detail="Conversation not found")
-    return conv
-
-
-@router.get("/{conversation_id}/export-pdf")
-async def export_conversation_pdf(
-    conversation_id: str,
-    current_user: User = Depends(get_current_user),
-    db: AsyncSession = Depends(get_db),
-):
-    """
-    WIN FACTOR: Export full legal analysis as PDF.
-    Judges love concrete deliverables users can take to a real lawyer.
-    """
-    result = await db.execute(
-        select(Conversation).where(
-            Conversation.id == conversation_id,
-            Conversation.user_id == current_user.id,
-        )
-    )
-    conv = result.scalar_one_or_none()
-    if not conv:
-        raise HTTPException(status_code=404, detail="Conversation not found")
-
-    from fastapi.responses import Response
-    pdf_bytes = generate_pdf(conv)
-    return Response(
-        content=pdf_bytes,
-        media_type="application/pdf",
-        headers={"Content-Disposition": f"attachment; filename=lexai-report-{conversation_id[:8]}.pdf"},
-    )
-
-
-@router.delete("/{conversation_id}", status_code=204)
-async def delete_conversation(
-    conversation_id: str,
-    current_user: User = Depends(get_current_user),
-    db: AsyncSession = Depends(get_db),
-):
     result = await db.execute(
         select(Conversation).where(
             Conversation.id == conversation_id,

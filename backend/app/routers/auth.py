@@ -29,13 +29,14 @@ TEAM — WHAT YOU MUST DO:
 AI USAGE NOTE:
   This file needs no changes. Safe to leave as-is for the hackathon.
 """
-from fastapi import APIRouter, Depends, HTTPException, status
-from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select
+
 from app.database import get_db
 from app.models.models import User
-from app.schemas.auth import SignupRequest, LoginRequest, TokenResponse
-from app.utils.auth import hash_password, verify_password, create_access_token
+from app.schemas.auth import LoginRequest, SignupRequest, TokenResponse
+from app.utils.auth import create_access_token, hash_password, verify_password
+from fastapi import APIRouter, Depends, HTTPException, status
+from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
 
 router = APIRouter(prefix="/auth", tags=["auth"])
 

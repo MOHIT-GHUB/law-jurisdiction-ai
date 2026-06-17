@@ -2,6 +2,7 @@
 Lawyer Finder tool — uses Google Maps Places API to find
 licensed attorneys near the user's location by specialty.
 """
+
 import httpx
 from app.config import get_settings
 from app.redis_client import cache_get, cache_set, make_cache_key
