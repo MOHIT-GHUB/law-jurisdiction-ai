@@ -92,11 +92,12 @@ from app.agents.state import AgentState
 from app.agents.state_law_agent import run_state_law_agent
 from langgraph.checkpoint.memory import MemorySaver
 from langgraph.graph import END, StateGraph
+from langchain_core.runnables import RunnableConfig
 
 # ── Dispatcher node: runs all 3 research agents in parallel ──────────────────
 
 
-async def fan_out_research(state: AgentState, config: dict) -> dict:
+async def fan_out_research(state: AgentState, config: RunnableConfig) -> dict:
     """
     Parallel dispatcher — runs federal, state, and case law agents concurrently.
 
