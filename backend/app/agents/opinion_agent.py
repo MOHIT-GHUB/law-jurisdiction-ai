@@ -47,15 +47,35 @@ AI USAGE NOTE:
 """
 
 import json
-import re
 
 # Import from state.py, NOT graph.py — avoids circular import
+from app.agents.parsing import extract_json
 from app.agents.state import AgentState
 from app.config import get_settings
 from langchain_core.messages import HumanMessage, SystemMessage
 from langchain_openai import ChatOpenAI
 
 settings = get_settings()
+
+# The opinion ends with a machine-readable JSON block (sometimes inside a ```json
+# fence). We never stream from the first such marker on, and strip it from the
+# stored opinion. Legal prose effectively never contains "{" or "```", so cutting
+# at the earliest marker is safe.
+_OPINION_CUT_MARKERS = ("```", "{")
+# Hold back enough trailing chars while streaming that a partial fence ("``")
+# split across chunks can't leak before we recognize it.
+_OPINION_HOLD = len("```")
+
+
+def _opinion_visible(text: str) -> str:
+    """Return the human-readable opinion: everything before the trailing JSON/fence."""
+    cut = len(text)
+    for marker in _OPINION_CUT_MARKERS:
+        i = text.find(marker)
+        if i != -1:
+            cut = min(cut, i)
+    return text[:cut].rstrip()
+
 
 SYSTEM_PROMPT = """You are a senior US legal analyst synthesizing research from multiple sources.
 
@@ -82,7 +102,7 @@ IMPORTANT: Always end with a JSON block in this exact format:
 {"case_strength_score": <number>, "has_viable_case": <true/false>, "recommended_actions": ["action1", "action2", "action3"]}"""
 
 
-async def run_opinion_agent(state: AgentState) -> dict:
+async def run_opinion_agent(state: AgentState, config: dict) -> dict:
     intake = state.get("intake_summary", {})
     federal = state.get("federal_law_results", [])
     state_law = state.get("state_law_results", [])
@@ -102,33 +122,33 @@ async def run_opinion_agent(state: AgentState) -> dict:
     ]
 
     opinion_text = ""
-    stream_cb = state.get("stream_callback")
+    sent = 0
+    stream_cb = (config or {}).get("configurable", {}).get("stream_callback")
 
     if stream_cb:
         await stream_cb("\n\n---\n## 📊 Legal Analysis\n\n")
 
+    # Stream only the human-readable analysis: forward the growing visible delta,
+    # holding back a few trailing chars so the JSON block / code fence never leaks.
     async for chunk in llm.astream(messages):
-        token = chunk.content
-        opinion_text += token
+        opinion_text += chunk.content
         if stream_cb:
-            await stream_cb(token)
+            safe_end = len(_opinion_visible(opinion_text)) - _OPINION_HOLD
+            if safe_end > sent:
+                await stream_cb(_opinion_visible(opinion_text)[sent:safe_end])
+                sent = safe_end
 
-    # Parse the structured JSON output
-    score = 50
-    recommended_actions = []
-    match = re.search(r'\{[^}]*"case_strength_score"[^}]*\}', opinion_text, re.DOTALL)
-    if match:
-        try:
-            parsed = json.loads(match.group())
-            score = int(parsed.get("case_strength_score", 50))
-            recommended_actions = parsed.get("recommended_actions", [])
-        except (json.JSONDecodeError, ValueError):
-            pass
+    clean_opinion = _opinion_visible(opinion_text)
+    if stream_cb and len(clean_opinion) > sent:
+        await stream_cb(clean_opinion[sent:])
 
-    # Remove JSON block from the displayed opinion
-    clean_opinion = re.sub(
-        r'\{[^}]*"case_strength_score"[^}]*\}', "", opinion_text, flags=re.DOTALL
-    ).strip()
+    # Parse the structured JSON output (raw_decode handles nested braces).
+    parsed = extract_json(opinion_text) or {}
+    try:
+        score = int(parsed.get("case_strength_score", 50))
+    except (TypeError, ValueError):
+        score = 50
+    recommended_actions = parsed.get("recommended_actions", []) or []
 
     return {
         "opinion": clean_opinion,

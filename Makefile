@@ -5,6 +5,7 @@ BACKEND := backend
 COMPOSE := docker compose
 UV      := uv --project $(BACKEND)
 PORT    ?= 8000
+SCENARIO ?= complete
 
 .DEFAULT_GOAL := help
 
@@ -74,6 +75,21 @@ hooks: ## Install the git pre-commit hook
 .PHONY: pre-commit
 pre-commit: ## Run all pre-commit hooks against every file
 	$(UV) run pre-commit run --all-files
+
+##@ Smoke tests
+
+.PHONY: smoke-mock
+smoke-mock: ## Drive the agent graph offline with a stubbed LLM (all scenarios)
+	cd $(BACKEND) && for s in complete partial no-perp outside-us criminal; do \
+		echo "=== $$s ==="; uv run python scripts/run_workflow.py $$s --mock; echo; done
+
+.PHONY: smoke
+smoke: ## Drive the agent graph with the REAL LLM (needs OPENAI_API_KEY); SCENARIO?=complete
+	cd $(BACKEND) && uv run python scripts/run_workflow.py $(SCENARIO)
+
+.PHONY: smoke-ws
+smoke-ws: ## End-to-end smoke over the running HTTP+WS API (needs the stack up)
+	cd $(BACKEND) && uv run python scripts/ws_smoke.py
 
 ##@ Housekeeping
 

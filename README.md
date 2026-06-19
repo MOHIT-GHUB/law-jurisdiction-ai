@@ -194,3 +194,57 @@ make install     # one-time: installs the git hook (or: make hooks)
 ```
 
 After that, `git commit` automatically lints/formats staged files. To run everything on demand: `make pre-commit`.
+
+## Manual testing the agent workflow
+
+There's no automated test suite yet — instead, two scripts let you exercise the LangGraph pipeline (intake → classification → research → opinion → referral, with early-exit gates) by hand. In both, `DEMO_MODE` is forced on so the legal tools (Congress/Cornell/CourtListener/Maps) return canned data — the **LLM** is the only thing that can hit OpenAI.
+
+### 1. Drive the graph directly — [scripts/run_workflow.py](backend/scripts/run_workflow.py)
+
+No server, DB, or auth needed. The driver runs a **multi-turn** conversation: it simulates the user and keeps replying until intake completes or the pipeline early-exits, reusing one `thread_id` across turns (so it also exercises the `MemorySaver` resume that `chat.py` relies on).
+
+Two modes:
+
+- **Mock** (`--mock`) — the LLM *and* the simulated user are stubbed. Deterministic, offline, free, no key needed.
+- **Real** (default) — agents call OpenAI, and a persona LLM plays the user and answers intake's questions. Needs `OPENAI_API_KEY` in `backend/.env`.
+
+Run via Make:
+
+```bash
+make smoke-mock                 # all scenarios, stubbed LLM (offline)
+make smoke                      # real LLM, SCENARIO=complete by default
+make smoke SCENARIO=partial     # real LLM, pick a scenario
+```
+
+Or call the script directly (run from `backend/` so it finds `.env`):
+
+```bash
+cd backend
+uv run python scripts/run_workflow.py partial --mock      # offline
+uv run python scripts/run_workflow.py partial             # real LLM
+uv run python scripts/run_workflow.py complete --max-turns 10
+```
+
+Scenarios:
+
+| Scenario | Exercises | Expected outcome |
+|----------|-----------|------------------|
+| `complete` | all 5 fields in the first message | full pipeline → referral |
+| `partial` | missing the date → intake asks, user answers | full pipeline (≥2 turns) |
+| `no-perp` | no identifiable defendant | early exit at intake |
+| `outside-us` | incident outside the US | early exit at intake |
+| `criminal` | criminal-only matter | early exit at classification |
+
+Each run prints every user turn, the streamed assistant text, and a final summary (route taken, turns, classification, case-strength score, result counts).
+
+### 2. End-to-end over the real API — [scripts/ws_smoke.py](backend/scripts/ws_smoke.py)
+
+Exercises the actual path the frontend uses: signs up for a JWT, opens the WebSocket, sends a chat turn, and prints the streamed frames. Needs the full stack running and `OPENAI_API_KEY` set for the server.
+
+```bash
+cp backend/.env.example backend/.env   # set OPENAI_API_KEY + SECRET_KEY; keep DEMO_MODE=True
+docker compose up -d --build           # postgres + redis + server
+make smoke-ws
+```
+
+Optional overrides: `LEXAI_BASE_URL` (default `http://localhost:8000`) and `LEXAI_MESSAGE` (the chat message to send).

@@ -77,6 +77,7 @@ AI USAGE NOTE:
 import asyncio
 
 from app.agents.case_law_agent import run_case_law_agent
+from app.agents.classification_agent import run_classification_agent
 from app.agents.federal_law_agent import run_federal_law_agent
 
 # ── Import agent runner functions ─────────────────────────────────────────────
@@ -90,9 +91,9 @@ from app.agents.referral_agent import run_referral_agent
 # agents/state.py has NO imports from any agent file — that's the key.
 from app.agents.state import AgentState
 from app.agents.state_law_agent import run_state_law_agent
+from langchain_core.runnables import RunnableConfig
 from langgraph.checkpoint.memory import MemorySaver
 from langgraph.graph import END, StateGraph
-from langchain_core.runnables import RunnableConfig
 
 # ── Dispatcher node: runs all 3 research agents in parallel ──────────────────
 
@@ -124,15 +125,32 @@ async def fan_out_research(state: AgentState, config: RunnableConfig) -> dict:
 # ── Routing: decides whether to keep collecting intake or start research ──────
 
 
-def should_research(state: AgentState) -> str:
+def route_after_intake(state: AgentState) -> str:
     """
-    After intake_agent runs, check if all required info has been collected.
-    Returns "research" to proceed, or "intake" to keep asking the user.
-    intake_complete is set to True by intake_agent when [INTAKE_COMPLETE] fires.
+    After intake_agent runs:
+    - "classify" → all info collected, proceed to classification
+    - "end"      → otherwise end this turn (early exit, OR intake asked a question
+                   and needs the user's next message)
+
+    NOTE: we do NOT loop intake back into itself. The graph runs once per user
+    message (chat.py invokes it per message with the full history); looping would
+    make intake talk to itself with no new input until it self-completes or hits
+    the recursion limit. Ending the turn lets the next user message drive intake.
     """
-    if state.get("intake_complete"):
-        return "research"
-    return "intake"
+    if state.get("intake_complete") and not state.get("early_exit"):
+        return "classify"
+    return "end"
+
+
+def route_after_classification(state: AgentState) -> str:
+    """
+    After classification_agent runs:
+    - "end"      → classification hit an early exit (criminal-only / SOL expired)
+    - "research" → proceed to the parallel research fan-out
+    """
+    if state.get("early_exit"):
+        return "end"
+    return "research"
 
 
 # ── Graph construction ────────────────────────────────────────────────────────
@@ -147,6 +165,7 @@ def build_graph():
 
     # Register all nodes (name → async function)
     builder.add_node("intake_agent", run_intake_agent)
+    builder.add_node("classification_agent", run_classification_agent)
     builder.add_node("fan_out_research", fan_out_research)  # parallel dispatcher
     builder.add_node("opinion_agent", run_opinion_agent)
     builder.add_node("referral_agent", run_referral_agent)
@@ -154,13 +173,23 @@ def build_graph():
     # First node to execute
     builder.set_entry_point("intake_agent")
 
-    # After intake: loop back if incomplete, proceed to research if complete
+    # After intake: classify when complete, else end this turn (await next message)
     builder.add_conditional_edges(
         "intake_agent",
-        should_research,
+        route_after_intake,
         {
-            "intake": "intake_agent",  # loop: keep asking user for info
-            "research": "fan_out_research",  # proceed: all info collected
+            "classify": "classification_agent",  # proceed: all info collected
+            "end": END,  # early exit OR waiting for the user's next message
+        },
+    )
+
+    # After classification: end early (criminal-only / SOL expired) or research
+    builder.add_conditional_edges(
+        "classification_agent",
+        route_after_classification,
+        {
+            "research": "fan_out_research",
+            "end": END,
         },
     )
 

@@ -53,7 +53,7 @@ For each law found, provide:
 Be precise and cite real statutes only."""
 
 
-async def run_federal_law_agent(state: AgentState) -> dict:
+async def run_federal_law_agent(state: AgentState, config: dict) -> dict:
     intake = state.get("intake_summary", {})
     query = f"Incident: {intake.get('incident')} | State: {intake.get('state')} | Perpetrator: {intake.get('perpetrator')}"
 
@@ -70,7 +70,7 @@ async def run_federal_law_agent(state: AgentState) -> dict:
 
     response = await llm.ainvoke(messages)
 
-    stream_cb = state.get("stream_callback")
+    stream_cb = (config or {}).get("configurable", {}).get("stream_callback")
     if stream_cb:
         await stream_cb("\n📋 **Federal Law Research complete**\n")
 

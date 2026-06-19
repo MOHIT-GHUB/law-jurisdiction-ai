@@ -100,7 +100,6 @@ from reportlab.platypus import (
     TableStyle,
 )
 
-
 # ── Colour palette ────────────────────────────────────────────────────────────
 _DARK_BLUE = colors.HexColor("#1e3a5f")
 _MID_BLUE = colors.HexColor("#2563eb")
@@ -367,12 +366,14 @@ def _add_lawyers(story: list, lawyers: list[dict], styles: dict) -> None:
     ]
     rows = [header]
     for lw in lawyers[:6]:  # max 6 lawyers in PDF
-        rows.append([
-            Paragraph(lw.get("name", "—"), styles["value"]),
-            Paragraph(lw.get("address", "—"), styles["value"]),
-            Paragraph(lw.get("specialty", "—"), styles["value"]),
-            Paragraph(str(lw.get("rating", "—")), styles["value"]),
-        ])
+        rows.append(
+            [
+                Paragraph(lw.get("name", "—"), styles["value"]),
+                Paragraph(lw.get("address", "—"), styles["value"]),
+                Paragraph(lw.get("specialty", "—"), styles["value"]),
+                Paragraph(str(lw.get("rating", "—")), styles["value"]),
+            ]
+        )
 
     tbl = Table(rows, colWidths=[1.8 * inch, 2.2 * inch, 1.4 * inch, 0.7 * inch])
     tbl.setStyle(
