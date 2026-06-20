@@ -20,7 +20,7 @@ AI USAGE NOTE:
 
 from functools import lru_cache
 
-from pydantic_settings import BaseSettings
+from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
 class Settings(BaseSettings):
@@ -73,9 +73,8 @@ class Settings(BaseSettings):
     # which would make requests slow and expensive.
     MAX_CONTEXT_MESSAGES: int = 20
 
-    class Config:
-        env_file = ".env"
-        extra = "ignore"  # ignore unknown keys in .env — safe for team members adding custom vars
+    # Pydantic v2 style config (replaces deprecated inner class Config)
+    model_config = SettingsConfigDict(env_file=".env", extra="ignore")
 
 
 @lru_cache

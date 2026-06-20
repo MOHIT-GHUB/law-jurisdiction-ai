@@ -51,6 +51,7 @@ import json
 # Import from state.py, NOT graph.py — avoids circular import
 from app.agents.parsing import extract_json
 from app.agents.state import AgentState
+from langchain_core.runnables import RunnableConfig
 from app.config import get_settings
 from langchain_core.messages import HumanMessage, SystemMessage
 from langchain_openai import ChatOpenAI
@@ -102,7 +103,7 @@ IMPORTANT: Always end with a JSON block in this exact format:
 {"case_strength_score": <number>, "has_viable_case": <true/false>, "recommended_actions": ["action1", "action2", "action3"]}"""
 
 
-async def run_opinion_agent(state: AgentState, config: dict) -> dict:
+async def run_opinion_agent(state: AgentState, config: RunnableConfig) -> dict:
     intake = state.get("intake_summary", {})
     federal = state.get("federal_law_results", [])
     state_law = state.get("state_law_results", [])

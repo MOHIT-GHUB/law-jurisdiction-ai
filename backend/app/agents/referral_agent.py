@@ -44,6 +44,7 @@ import json
 
 # Import from state.py, NOT graph.py — avoids circular import
 from app.agents.state import AgentState
+from langchain_core.runnables import RunnableConfig
 from app.config import get_settings
 from app.tools.lawyer_finder_tool import find_lawyers_near
 from langchain_core.messages import HumanMessage, SystemMessage
@@ -61,7 +62,7 @@ For each recommendation explain:
 Keep recommendations practical and actionable."""
 
 
-async def run_referral_agent(state: AgentState, config: dict) -> dict:
+async def run_referral_agent(state: AgentState, config: RunnableConfig) -> dict:
     intake = state.get("intake_summary", {})
     opinion = state.get("opinion", "")
     score = state.get("case_strength_score", 50)

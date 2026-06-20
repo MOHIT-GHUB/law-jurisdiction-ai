@@ -35,6 +35,7 @@ import json
 
 # Import from state.py, NOT graph.py — avoids circular import
 from app.agents.state import AgentState
+from langchain_core.runnables import RunnableConfig
 from app.config import get_settings
 from app.tools.courtlistener_tool import search_courtlistener
 from langchain_core.messages import HumanMessage, SystemMessage
@@ -54,7 +55,7 @@ For each case:
 Focus on cases from the same state if possible. Federal circuit cases also valuable."""
 
 
-async def run_case_law_agent(state: AgentState, config: dict) -> dict:
+async def run_case_law_agent(state: AgentState, config: RunnableConfig) -> dict:
     intake = state.get("intake_summary", {})
 
     raw_results = await search_courtlistener(

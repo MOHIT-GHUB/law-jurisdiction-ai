@@ -36,16 +36,12 @@ from app.database import get_db
 from app.models.models import User
 from fastapi import Depends, HTTPException, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
+import bcrypt
 from jose import JWTError, jwt
-from passlib.context import CryptContext
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 settings = get_settings()
-
-# CryptContext manages hashing scheme. 'deprecated="auto"' means old hashes
-# are automatically re-hashed to the current scheme on next login.
-pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 
 # HTTPBearer extracts the token from the Authorization header automatically.
 # It returns 403 if the header is missing entirely.
@@ -54,12 +50,12 @@ bearer_scheme = HTTPBearer()
 
 def hash_password(password: str) -> str:
     """Hash a plain-text password using bcrypt. Used at signup."""
-    return pwd_context.hash(password)
+    return bcrypt.hashpw(password.encode("utf-8"), bcrypt.gensalt()).decode("utf-8")
 
 
 def verify_password(plain: str, hashed: str) -> bool:
     """Verify a plain password against a stored bcrypt hash. Used at login."""
-    return pwd_context.verify(plain, hashed)
+    return bcrypt.checkpw(plain.encode("utf-8"), hashed.encode("utf-8"))
 
 
 def create_access_token(data: dict, expires_delta: timedelta | None = None) -> str:

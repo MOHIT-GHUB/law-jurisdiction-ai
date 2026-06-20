@@ -36,6 +36,7 @@ from datetime import UTC, datetime
 # Import from state.py, NOT graph.py — avoids circular import
 from app.agents.parsing import extract_json
 from app.agents.state import AgentState
+from langchain_core.runnables import RunnableConfig
 from app.config import get_settings
 from langchain_core.messages import HumanMessage, SystemMessage
 from langchain_openai import ChatOpenAI
@@ -67,7 +68,7 @@ Respond with ONLY a JSON object, no other text:
 {"bucket": "<one bucket>", "early_exit": <true|false>, "early_exit_reason": "<short reason, or empty string>"}"""
 
 
-async def run_classification_agent(state: AgentState, config: dict) -> dict:
+async def run_classification_agent(state: AgentState, config: RunnableConfig) -> dict:
     stream_cb = (config or {}).get("configurable", {}).get("stream_callback")
     intake = state.get("intake_summary", {})
 

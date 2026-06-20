@@ -191,7 +191,8 @@ from app.models.models import Conversation, ConversationState, Message
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect
 from jose import JWTError, jwt
 from sqlalchemy import select
-
+from typing import Any
+from langchain_core.runnables import RunnableConfig
 logger = logging.getLogger(__name__)
 settings = get_settings()
 
@@ -431,13 +432,25 @@ async def chat_websocket(websocket: WebSocket, conversation_id: str):
             full_response_parts: list[str] = []
             stream_to_client = _make_stream_callback(websocket, full_response_parts)
 
-            config = {
-                "configurable": {
-                    # thread_id isolates MemorySaver state per conversation
-                    "thread_id": conversation_id,
-                    "stream_callback": stream_to_client,
-                }
+           # config = {
+           #     "configurable": {
+           #         # thread_id isolates MemorySaver state per conversation
+           #         "thread_id": conversation_id,
+           #         "stream_callback": stream_to_client,
+           #     }
+           # }
+           # ...existing code...
+
+            configurable: dict[str, Any] = {
+                "thread_id": conversation_id,
+                "user_id": str(user_id),
+                "stream_callback": stream_to_client,
             }
+            config = RunnableConfig(configurable=configurable)
+            result = await graph.ainvoke(state, config=config)
+# ...inside websocket handler...
+            
+# ...existing code...
 
             # ── Notify frontend research is starting (after intake done) ──
             # The frontend shows a spinner when it receives this

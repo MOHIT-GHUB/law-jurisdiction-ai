@@ -35,6 +35,7 @@ import json
 
 # Import from state.py, NOT graph.py — avoids circular import
 from app.agents.state import AgentState
+from langchain_core.runnables import RunnableConfig
 from app.config import get_settings
 from app.tools.congress_tool import search_congress
 from langchain_core.messages import HumanMessage, SystemMessage
@@ -53,7 +54,7 @@ For each law found, provide:
 Be precise and cite real statutes only."""
 
 
-async def run_federal_law_agent(state: AgentState, config: dict) -> dict:
+async def run_federal_law_agent(state: AgentState, config: RunnableConfig) -> dict:
     intake = state.get("intake_summary", {})
     query = f"Incident: {intake.get('incident')} | State: {intake.get('state')} | Perpetrator: {intake.get('perpetrator')}"
 

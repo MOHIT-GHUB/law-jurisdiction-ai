@@ -36,9 +36,20 @@ from app.schemas.auth import LoginRequest, SignupRequest, TokenResponse
 from app.utils.auth import create_access_token, hash_password, verify_password
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy import select
+from sqlalchemy.exc import OperationalError, SQLAlchemyError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 router = APIRouter(prefix="/auth", tags=["auth"])
+
+
+def _db_unavailable() -> HTTPException:
+  return HTTPException(
+    status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+    detail=(
+      "Database unavailable. Start PostgreSQL and retry. "
+      "For Docker: docker compose up -d postgres"
+    ),
+  )
 
 
 @router.post("/signup", response_model=TokenResponse, status_code=status.HTTP_201_CREATED)
@@ -50,13 +61,19 @@ async def signup(body: SignupRequest, db: AsyncSession = Depends(get_db)):
     """
     # Check if username already exists (unique constraint would also catch this,
     # but checking first gives a cleaner error message)
-    result = await db.execute(select(User).where(User.username == body.username))
+    try:
+      result = await db.execute(select(User).where(User.username == body.username))
+    except (OperationalError, OSError, SQLAlchemyError):
+      raise _db_unavailable() from None
     if result.scalar_one_or_none():
         raise HTTPException(status_code=409, detail="Username already taken")
 
     user = User(username=body.username, password_hash=hash_password(body.password))
     db.add(user)
-    await db.flush()  # flush assigns the UUID without full commit; get_db commits after
+    try:
+      await db.flush()  # flush assigns the UUID without full commit; get_db commits after
+    except (OperationalError, OSError, SQLAlchemyError):
+      raise _db_unavailable() from None
 
     token = create_access_token({"sub": user.id})
     return TokenResponse(access_token=token, username=user.username)
@@ -69,7 +86,10 @@ async def login(body: LoginRequest, db: AsyncSession = Depends(get_db)):
     Returns 401 for both "user not found" and "wrong password" — intentionally
     vague to prevent username enumeration attacks.
     """
-    result = await db.execute(select(User).where(User.username == body.username))
+    try:
+      result = await db.execute(select(User).where(User.username == body.username))
+    except (OperationalError, OSError, SQLAlchemyError):
+      raise _db_unavailable() from None
     user = result.scalar_one_or_none()
 
     # Both checks in one condition — same error message either way (security)

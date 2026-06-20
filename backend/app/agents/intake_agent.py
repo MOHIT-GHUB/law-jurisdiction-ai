@@ -43,6 +43,7 @@ import json
 # Import from state.py, NOT graph.py — avoids circular import
 from app.agents.parsing import extract_json
 from app.agents.state import AgentState
+from langchain_core.runnables import RunnableConfig
 from app.config import get_settings
 from langchain_core.messages import AIMessage, HumanMessage, SystemMessage
 from langchain_openai import ChatOpenAI
@@ -154,7 +155,7 @@ async def _compress_history(history: list[dict], intake_summary: dict) -> list[d
     return [summary_message] + recent
 
 
-async def run_intake_agent(state: AgentState, config: dict) -> dict:
+async def run_intake_agent(state: AgentState, config: RunnableConfig) -> dict:
     stream_cb = (config or {}).get("configurable", {}).get("stream_callback")
 
     intake_summary = state.get("intake_summary", {})

@@ -69,6 +69,7 @@ HOW TO RUN (after implementing):
   Then open: http://localhost:8000/docs  (auto-generated API explorer)
 """
 
+import logging
 from contextlib import asynccontextmanager
 
 from app.config import get_settings
@@ -76,10 +77,24 @@ from app.database import init_db
 from app.routers import auth, chat, conversations
 from fastapi import FastAPI
 
+logger = logging.getLogger(__name__)
+
 
 @asynccontextmanager
 async def lifespan(_: FastAPI):
-    await init_db()
+    """Startup and shutdown lifecycle."""
+    try:
+        await init_db()
+        logger.info("✓ Database initialized successfully")
+    except Exception as exc:
+        # If DB connection fails, still allow the server to start
+        # (useful for testing API without Docker running)
+        logger.warning(
+            "⚠ Database initialization failed: %s. "
+            "Server starting anyway. Auth/database endpoints will fail. "
+            "To fix: Start PostgreSQL (docker-compose up -d) or check DATABASE_URL in .env",
+            exc,
+        )
     yield
 
 
