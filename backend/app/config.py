@@ -57,7 +57,8 @@ class Settings(BaseSettings):
     # All 5 agents (intake, federal, state, case, opinion, referral) use this.
     # gpt-4o is best quality; switch to gpt-4o-mini to cut costs during testing.
     OPENAI_API_KEY: str = ""
-    OPENAI_MODEL: str = "gpt-4o"
+    OPENAI_MODEL: str = "gemini-2.0-flash"
+    OPENAI_BASE_URL: str = ""
 
     # ── External Legal APIs ───────────────────────────────────────────────────
     # Congress.gov: free API key at https://api.congress.gov/sign-up/
