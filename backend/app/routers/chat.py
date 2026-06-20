@@ -363,13 +363,13 @@ async def chat_websocket(websocket: WebSocket, conversation_id: str):
       full functionality. Until then, DEMO_MODE in config returns mock
       data so the WebSocket still works end-to-end.
     """
-    # ── Step 1: Authenticate ──────────────────────────────────────────────
+    # ── Step 1: Accept first — can't close/send before accepting ─────────
+    await websocket.accept()
+
+    # ── Step 2: Authenticate (closes with code 4001 if invalid) ──────────
     user_id = await _authenticate(websocket)
     if user_id is None:
         return  # socket already closed by _authenticate
-
-    # ── Step 2: Accept the WebSocket connection ───────────────────────────
-    await websocket.accept()
 
     # ── Step 3: Load or create the Conversation from DB ───────────────────
     try:
@@ -432,33 +432,19 @@ async def chat_websocket(websocket: WebSocket, conversation_id: str):
             full_response_parts: list[str] = []
             stream_to_client = _make_stream_callback(websocket, full_response_parts)
 
-           # config = {
-           #     "configurable": {
-           #         # thread_id isolates MemorySaver state per conversation
-           #         "thread_id": conversation_id,
-           #         "stream_callback": stream_to_client,
-           #     }
-           # }
-           # ...existing code...
-
-            configurable: dict[str, Any] = {
-                "thread_id": conversation_id,
-                "user_id": str(user_id),
-                "stream_callback": stream_to_client,
+            config: RunnableConfig = {
+                "configurable": {
+                    "thread_id": conversation_id,
+                    "user_id": str(user_id),
+                    "stream_callback": stream_to_client,
+                }
             }
-            config = RunnableConfig(configurable=configurable)
-            result = await graph.ainvoke(state, config=config)
-# ...inside websocket handler...
-            
-# ...existing code...
 
-            # ── Notify frontend research is starting (after intake done) ──
-            # The frontend shows a spinner when it receives this
-            # We send it optimistically; graph will set intake_complete
+            # ── Notify frontend we are thinking ───────────────────────────
             await websocket.send_json({"type": "status", "message": "Thinking..."})
 
             # ── Invoke LangGraph graph ────────────────────────────────────
-            # This runs: intake_agent → fan_out_research → opinion → referral
+            # This runs: intake_agent → classification → fan_out_research → opinion → referral
             # Tokens stream back via stream_to_client callback above
             try:
                 result = await graph.ainvoke(state, config=config)
