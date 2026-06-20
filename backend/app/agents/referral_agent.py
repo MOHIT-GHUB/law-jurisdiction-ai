@@ -61,7 +61,7 @@ For each recommendation explain:
 Keep recommendations practical and actionable."""
 
 
-async def run_referral_agent(state: AgentState) -> dict:
+async def run_referral_agent(state: AgentState, config: dict) -> dict:
     intake = state.get("intake_summary", {})
     opinion = state.get("opinion", "")
     score = state.get("case_strength_score", 50)
@@ -82,7 +82,7 @@ async def run_referral_agent(state: AgentState) -> dict:
     ]
     response = await llm.ainvoke(messages)
 
-    stream_cb = state.get("stream_callback")
+    stream_cb = (config or {}).get("configurable", {}).get("stream_callback")
     if stream_cb:
         await stream_cb(f"\n\n---\n## 👨‍⚖️ Recommended Attorneys\n\n{response.content}")
 

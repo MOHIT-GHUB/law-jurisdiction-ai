@@ -53,7 +53,7 @@ For each law:
 - Strength: strong/moderate/weak"""
 
 
-async def run_state_law_agent(state: AgentState) -> dict:
+async def run_state_law_agent(state: AgentState, config: dict) -> dict:
     intake = state.get("intake_summary", {})
     us_state = intake.get("state", "")
 
@@ -71,7 +71,7 @@ async def run_state_law_agent(state: AgentState) -> dict:
     ]
     response = await llm.ainvoke(messages)
 
-    stream_cb = state.get("stream_callback")
+    stream_cb = (config or {}).get("configurable", {}).get("stream_callback")
     if stream_cb:
         await stream_cb("\n⚖️ **State Law Research complete**\n")
 

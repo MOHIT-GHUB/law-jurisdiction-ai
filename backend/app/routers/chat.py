@@ -181,7 +181,6 @@ routers/chat.py — WebSocket endpoint. The CORE of the user interaction.
 """
 
 import logging
-import uuid
 
 from app.agents.graph import graph
 from app.agents.state import AgentState
@@ -199,7 +198,23 @@ settings = get_settings()
 router = APIRouter(tags=["chat"])
 
 
+def _make_stream_callback(websocket: WebSocket, parts: list[str]):
+    """Build the per-message token stream callback.
+
+    Defined as a factory (rather than a closure inside the receive loop) so the
+    accumulator list and socket are bound as arguments — avoids the late-binding
+    loop-variable trap (ruff B023).
+    """
+
+    async def stream_to_client(token: str) -> None:
+        parts.append(token)
+        await websocket.send_json({"type": "token", "content": token})
+
+    return stream_to_client
+
+
 # ── Helper: authenticate WebSocket via JWT query param ───────────────────────
+
 
 async def _authenticate(websocket: WebSocket) -> str | None:
     """
@@ -215,9 +230,7 @@ async def _authenticate(websocket: WebSocket) -> str | None:
         await websocket.close(code=4001, reason="Missing token")
         return None
     try:
-        payload = jwt.decode(
-            token, settings.SECRET_KEY, algorithms=[settings.ALGORITHM]
-        )
+        payload = jwt.decode(token, settings.SECRET_KEY, algorithms=[settings.ALGORITHM])
         user_id: str | None = payload.get("sub")
         if not user_id:
             raise JWTError("No sub claim")
@@ -229,9 +242,8 @@ async def _authenticate(websocket: WebSocket) -> str | None:
 
 # ── Helper: load or create a Conversation row ─────────────────────────────────
 
-async def _get_or_create_conversation(
-    conversation_id: str, user_id: str
-) -> Conversation:
+
+async def _get_or_create_conversation(conversation_id: str, user_id: str) -> Conversation:
     """
     Load the conversation from Postgres by ID.
     If it doesn't exist yet (new conversation), create it now.
@@ -260,6 +272,7 @@ async def _get_or_create_conversation(
 
 # ── Helper: load full message history for a conversation ─────────────────────
 
+
 async def _load_messages(conversation_id: str) -> list[dict]:
     """
     Fetch all messages for this conversation from Postgres, ordered oldest-first.
@@ -277,6 +290,7 @@ async def _load_messages(conversation_id: str) -> list[dict]:
 
 # ── Helper: persist a message to Postgres ────────────────────────────────────
 
+
 async def _save_message(conversation_id: str, role: str, content: str) -> None:
     """Save a single user or assistant message to the messages table."""
     async with AsyncSessionLocal() as db:
@@ -285,6 +299,7 @@ async def _save_message(conversation_id: str, role: str, content: str) -> None:
 
 
 # ── Helper: update Conversation state + research_result after research done ───
+
 
 async def _finalize_conversation(conversation_id: str, result: dict) -> None:
     """
@@ -315,7 +330,9 @@ async def _finalize_conversation(conversation_id: str, result: dict) -> None:
             # Build a short sidebar title: first 30 chars of incident + location
             incident = intake.get("incident", "New case")[:30]
             location = intake.get("location", "")
-            conv.title = f"{incident}{'...' if len(intake.get('incident','')) > 30 else ''} — {location}".strip(" —")
+            conv.title = f"{incident}{'...' if len(intake.get('incident', '')) > 30 else ''} — {location}".strip(
+                " —"
+            )
         elif result.get("intake_complete") and conv.state == ConversationState.INTAKE:
             # Intake just completed, research starting
             conv.state = ConversationState.ACTIVE
@@ -325,6 +342,7 @@ async def _finalize_conversation(conversation_id: str, result: dict) -> None:
 
 
 # ── Main WebSocket endpoint ────────────────────────────────────────────────────
+
 
 @router.websocket("/ws/{conversation_id}")
 async def chat_websocket(websocket: WebSocket, conversation_id: str):
@@ -402,16 +420,16 @@ async def chat_websocket(websocket: WebSocket, conversation_id: str):
                 "case_strength_score": 0,
                 "recommended_actions": [],
                 "referred_lawyers": [],
+                "legal_classification": {},
+                "early_exit": False,
+                "early_exit_reason": "",
             }
 
             # ── stream_callback: sends each token to client in real-time ──
             # This is what makes responses feel like ChatGPT (token-by-token).
             # Passed via LangGraph config — NOT stored in state (not serializable).
             full_response_parts: list[str] = []
-
-            async def stream_to_client(token: str) -> None:
-                full_response_parts.append(token)
-                await websocket.send_json({"type": "token", "content": token})
+            stream_to_client = _make_stream_callback(websocket, full_response_parts)
 
             config = {
                 "configurable": {
@@ -433,10 +451,12 @@ async def chat_websocket(websocket: WebSocket, conversation_id: str):
                 result = await graph.ainvoke(state, config=config)
             except Exception as exc:
                 logger.error("Graph invocation error for conv %s: %s", conversation_id, exc)
-                await websocket.send_json({
-                    "type": "error",
-                    "message": "An error occurred while processing your case. Please try again.",
-                })
+                await websocket.send_json(
+                    {
+                        "type": "error",
+                        "message": "An error occurred while processing your case. Please try again.",
+                    }
+                )
                 continue
 
             # ── Save the assembled assistant response to Postgres ─────────
@@ -447,10 +467,12 @@ async def chat_websocket(websocket: WebSocket, conversation_id: str):
             # ── Notify frontend when intake just completed ────────────────
             if result.get("intake_complete"):
                 await websocket.send_json({"type": "intake_complete"})
-                await websocket.send_json({
-                    "type": "status",
-                    "message": "Searching federal law, state law, and past cases simultaneously...",
-                })
+                await websocket.send_json(
+                    {
+                        "type": "status",
+                        "message": "Searching federal law, state law, and past cases simultaneously...",
+                    }
+                )
 
             # ── Send final structured results to frontend ─────────────────
             score = result.get("case_strength_score", 0)
@@ -479,6 +501,8 @@ async def chat_websocket(websocket: WebSocket, conversation_id: str):
     except Exception as exc:
         logger.error("Unexpected WebSocket error: %s", exc)
         try:
-            await websocket.send_json({"type": "error", "message": "Server error. Please reconnect."})
+            await websocket.send_json(
+                {"type": "error", "message": "Server error. Please reconnect."}
+            )
         except Exception:
             pass  # socket may already be closed

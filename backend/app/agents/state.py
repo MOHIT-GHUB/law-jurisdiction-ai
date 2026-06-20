@@ -84,3 +84,17 @@ class AgentState(TypedDict):
     # ── Referral agent output ──────────────────────────────────────────────
     # List of lawyer dicts: {name, address, phone, rating, specialty, url}
     referred_lawyers: list[dict]
+
+    # ── Classification agent output ────────────────────────────────────────
+    # Set by classification_agent. Shape:
+    #   {"bucket": one of employment|housing|consumer|personal_injury|civil_rights
+    #              (or None if unclassifiable),
+    #    "early_exit": bool,
+    #    "early_exit_reason": str}
+    legal_classification: dict
+
+    # ── Early-exit gating (set by intake_agent OR classification_agent) ─────
+    # When early_exit is True, graph.py routes straight to END and the pipeline
+    # stops before research. early_exit_reason is shown to the user.
+    early_exit: bool
+    early_exit_reason: str
