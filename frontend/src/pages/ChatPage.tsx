@@ -1,13 +1,12 @@
 import { useEffect, useRef, useState, useCallback } from 'react';
-import { v4 as uuidv4 } from 'uuid';
-import { Loader2, AlertCircle, Scale } from 'lucide-react';
+import { AlertCircle, Scale, Loader2 } from 'lucide-react';
 import { useChat } from '../hooks/useChat';
 import { conversationsApi } from '../services/api';
 import MessageBubble from '../components/chat/MessageBubble';
 import ChatInput from '../components/chat/ChatInput';
 import WelcomeScreen from '../components/chat/WelcomeScreen';
 import ResultsPanel from '../components/chat/ResultsPanel';
-import type { Message } from '../types';
+import type { Message, ResearchResult } from '../types';
 
 interface ChatPageProps {
   conversationId: string;
@@ -17,15 +16,40 @@ interface ChatPageProps {
 export default function ChatPage({ conversationId, onConversationReady }: ChatPageProps) {
   const { state, sendMessage, initMessages } = useChat(conversationId);
   const messagesEndRef = useRef<HTMLDivElement>(null);
-  const [loading, setLoading] = useState(false);
-  const [loaded, setLoaded] = useState(false);
+  const [restoredResult, setRestoredResult] = useState<ResearchResult | null>(null);
+  const [loadingConv, setLoadingConv] = useState(true);
 
-  // Load existing messages when switching conversations
   useEffect(() => {
-    setLoaded(true);
+    let cancelled = false;
+    setLoadingConv(true);
+    setRestoredResult(null);
+    initMessages([]); // clear previous messages immediately
+
+    conversationsApi.list()
+      .then(list => {
+        const exists = list.some(c => c.id === conversationId);
+        if (!exists) {
+          if (!cancelled) setLoadingConv(false);
+          return;
+        }
+        return conversationsApi.get(conversationId).then(conv => {
+          if (cancelled) return;
+          if (conv.messages && conv.messages.length > 0) {
+            initMessages(conv.messages as Message[]);
+          }
+          if (conv.research_result) {
+            setRestoredResult(conv.research_result);
+          }
+          setLoadingConv(false);
+        });
+      })
+      .catch(() => {
+        if (!cancelled) setLoadingConv(false);
+      });
+
+    return () => { cancelled = true; };
   }, [conversationId]);
 
-  // Auto scroll
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [state.messages, state.streamingContent]);
@@ -35,10 +59,21 @@ export default function ChatPage({ conversationId, onConversationReady }: ChatPa
     onConversationReady();
   }, [sendMessage, onConversationReady]);
 
+  const score = state.score ?? restoredResult?.case_strength_score ?? null;
+  const lawyers = state.lawyers.length > 0 ? state.lawyers : (restoredResult?.referred_lawyers ?? []);
+  const actions = state.actions.length > 0 ? state.actions : (restoredResult?.recommended_actions ?? []);
+  const hasResults = score !== null || lawyers.length > 0 || actions.length > 0;
   const isEmpty = state.messages.length === 0 && !state.streamingContent;
-  const hasResults = state.score !== null || state.lawyers.length > 0 || state.actions.length > 0;
 
-  
+  if (loadingConv) {
+    return (
+      <div className="chat-page">
+        <div className="chat-main" style={{ alignItems: 'center', justifyContent: 'center' }}>
+          <Loader2 size={28} className="spin" style={{ color: 'var(--text-dim)' }} />
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="chat-page">
@@ -52,7 +87,6 @@ export default function ChatPage({ conversationId, onConversationReady }: ChatPa
                 <MessageBubble key={msg.id} message={msg} />
               ))}
 
-              {/* Streaming assistant message */}
               {state.streamingContent && (
                 <MessageBubble
                   message={{
@@ -65,7 +99,6 @@ export default function ChatPage({ conversationId, onConversationReady }: ChatPa
                 />
               )}
 
-              {/* Status indicator */}
               {state.isThinking && !state.streamingContent && (
                 <div className="status-row">
                   <div className="msg-avatar">
@@ -82,12 +115,10 @@ export default function ChatPage({ conversationId, onConversationReady }: ChatPa
                 </div>
               )}
 
-              {/* Status text while streaming */}
               {state.isThinking && state.streamingContent && state.statusText && (
                 <div className="status-inline">{state.statusText}</div>
               )}
 
-              {/* Error */}
               {state.error && (
                 <div className="error-row">
                   <AlertCircle size={16} />
@@ -114,11 +145,11 @@ export default function ChatPage({ conversationId, onConversationReady }: ChatPa
       {hasResults && (
         <aside className="results-sidebar">
           <ResultsPanel
-            score={state.score}
-            lawyers={state.lawyers}
-            actions={state.actions}
+            score={score}
+            lawyers={lawyers}
+            actions={actions}
             conversationId={conversationId}
-            isComplete={state.isComplete}
+            isComplete={state.isComplete || restoredResult !== null}
           />
         </aside>
       )}

@@ -1,8 +1,10 @@
-import { CheckCircle, Users, FileDown } from 'lucide-react';
+import { useState } from 'react';
+import { CheckCircle, Users, FileDown, Loader2 } from 'lucide-react';
 import ScoreGauge from './ScoreGauge';
 import LawyerCard from './LawyerCard';
 import type { Lawyer } from '../../types';
-import { conversationsApi } from '../../services/api';
+
+const BASE_URL = import.meta.env.VITE_API_URL || '';
 
 interface ResultsPanelProps {
   score: number | null;
@@ -13,7 +15,36 @@ interface ResultsPanelProps {
 }
 
 export default function ResultsPanel({ score, lawyers, actions, conversationId, isComplete }: ResultsPanelProps) {
+  const [downloading, setDownloading] = useState(false);
+  const [downloadError, setDownloadError] = useState('');
+
   if (!score && lawyers.length === 0 && actions.length === 0) return null;
+
+  const handleExport = async () => {
+    setDownloading(true);
+    setDownloadError('');
+    try {
+      const token = localStorage.getItem('lexai_token');
+      const res = await fetch(`${BASE_URL}/conversations/${conversationId}/export-pdf`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        throw new Error(data.detail || `Error ${res.status}`);
+      }
+      const blob = await res.blob();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `lexai-report-${conversationId.slice(0, 8)}.pdf`;
+      a.click();
+      URL.revokeObjectURL(url);
+    } catch (err: unknown) {
+      setDownloadError((err as Error).message || 'Download failed');
+    } finally {
+      setDownloading(false);
+    }
+  };
 
   return (
     <div className="results-panel">
@@ -56,15 +87,13 @@ export default function ResultsPanel({ score, lawyers, actions, conversationId, 
 
       {isComplete && (
         <div className="results-section">
-          <a
-            href={conversationsApi.exportPdf(conversationId)}
-            target="_blank"
-            rel="noreferrer"
-            className="export-btn"
-          >
-            <FileDown size={16} />
-            Download full report (PDF)
-          </a>
+          <button className="export-btn" onClick={handleExport} disabled={downloading}>
+            {downloading ? <Loader2 size={16} className="spin" /> : <FileDown size={16} />}
+            {downloading ? 'Generating PDF...' : 'Download full report (PDF)'}
+          </button>
+          {downloadError && (
+            <div style={{ fontSize: 12, color: 'var(--red)', marginTop: 6 }}>{downloadError}</div>
+          )}
         </div>
       )}
     </div>

@@ -65,29 +65,27 @@ async def list_conversations(
     return result.scalars().all()
 
 
+
+
 @router.get("/{conversation_id}", response_model=ConversationWithMessages)
 async def get_conversation(
     conversation_id: str,
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
-    """
-    Fetch a single conversation with all messages.
-    Used when the user clicks on a past conversation in the sidebar.
-    The user_id check ensures users can only read their own conversations.
-    """
+    from sqlalchemy.orm import selectinload
     result = await db.execute(
-        select(Conversation).where(
+        select(Conversation)
+        .options(selectinload(Conversation.messages))
+        .where(
             Conversation.id == conversation_id,
-            Conversation.user_id == current_user.id,  # security: own conversations only
+            Conversation.user_id == current_user.id,
         )
     )
     conv = result.scalar_one_or_none()
     if not conv:
         raise HTTPException(status_code=404, detail="Conversation not found")
     return conv
-
-
 @router.get("/{conversation_id}/export-pdf")
 async def export_conversation_pdf(
     conversation_id: str,
@@ -111,8 +109,11 @@ async def export_conversation_pdf(
     TEAM: The quality of this PDF is a demo moment. Make it look professional.
     Use reportlab or weasyprint. WeasyPrint can render HTML — easier to style.
     """
+    
     result = await db.execute(
-        select(Conversation).where(
+        select(Conversation)
+        .options(__import__('sqlalchemy.orm', fromlist=['selectinload']).selectinload(Conversation.messages))
+        .where(
             Conversation.id == conversation_id,
             Conversation.user_id == current_user.id,
         )

@@ -15,22 +15,27 @@ export interface ChatState {
   error: string | null;
 }
 
+const defaultState = (): ChatState => ({
+  messages: [],
+  isThinking: false,
+  statusText: '',
+  streamingContent: '',
+  score: null,
+  lawyers: [],
+  actions: [],
+  isComplete: false,
+  error: null,
+});
+
 export function useChat(conversationId: string) {
   const wsRef = useRef<WebSocket | null>(null);
-  const [state, setState] = useState<ChatState>({
-    messages: [],
-    isThinking: false,
-    statusText: '',
-    streamingContent: '',
-    score: null,
-    lawyers: [],
-    actions: [],
-    isComplete: false,
-    error: null,
-  });
+  const [state, setState] = useState<ChatState>(defaultState());
 
   const initMessages = useCallback((msgs: Message[]) => {
-    setState(s => ({ ...s, messages: msgs }));
+    setState(defaultState());
+    if (msgs.length > 0) {
+      setState(s => ({ ...s, messages: msgs }));
+    }
   }, []);
 
   const sendMessage = useCallback((content: string) => {
@@ -52,15 +57,12 @@ export function useChat(conversationId: string) {
       error: null,
     }));
 
-    // Create WS if not open
     if (!wsRef.current || wsRef.current.readyState > 1) {
       wsRef.current = createWebSocket(conversationId);
     }
 
     let assembledContent = '';
-
     const ws = wsRef.current;
-
     const send = () => ws.send(JSON.stringify({ type: 'message', content }));
 
     if (ws.readyState === WebSocket.OPEN) {
@@ -71,7 +73,6 @@ export function useChat(conversationId: string) {
 
     ws.onmessage = (event) => {
       const msg: WSMessage = JSON.parse(event.data);
-
       switch (msg.type) {
         case 'token':
           assembledContent += msg.content;
