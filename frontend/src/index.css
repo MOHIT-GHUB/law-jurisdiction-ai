@@ -1066,3 +1066,9 @@ body {
   border-radius: 50%;
   animation: spin 0.7s linear infinite;
 }
+
+.field-hint {
+  font-size: 11px;
+  color: var(--text-dim);
+  margin-top: 3px;
+}

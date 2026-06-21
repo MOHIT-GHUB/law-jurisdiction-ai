@@ -312,7 +312,7 @@ def _add_score(story: list, score: int, styles: dict) -> None:
         marker = "▶ " if _score_label(score) == desc.split(" —")[0].strip() else "   "
         story.append(
             Paragraph(
-                f'<font color="#{c.hexval()[1:]}">{marker}{rng}: {desc}</font>',
+                f'<font color="{c.hexval()}">{marker}{rng}: {desc}</font>',
                 styles["disclaimer"],
             )
         )

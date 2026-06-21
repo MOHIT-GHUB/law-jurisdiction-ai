@@ -10,9 +10,27 @@ export default function AuthPage() {
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
 
+  // Client-side validation before hitting the API
+  const validate = (): string | null => {
+    if (mode === 'signup') {
+      if (username.length < 3) return 'Username must be at least 3 characters';
+      if (!/^[a-zA-Z0-9_]+$/.test(username)) return 'Username can only contain letters, numbers, and underscores';
+      if (username.length > 50) return 'Username must be 50 characters or less';
+      if (password.length < 8) return 'Password must be at least 8 characters';
+    }
+    return null;
+  };
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError('');
+
+    const validationError = validate();
+    if (validationError) {
+      setError(validationError);
+      return;
+    }
+
     setLoading(true);
     try {
       if (mode === 'login') {
@@ -21,12 +39,18 @@ export default function AuthPage() {
         await signup(username, password);
       }
     } catch (err: unknown) {
-      const errData = (err as { response?: { data?: { detail?: unknown } } })?.response?.data?.detail;
-      const msg = typeof errData === 'string' 
-        ? errData 
-        : Array.isArray(errData) 
-        ? 'Validation error — check your username and password'
-        : 'Something went wrong';
+      const detail = (err as { response?: { data?: { detail?: unknown } } })?.response?.data?.detail;
+      let msg = 'Something went wrong. Please try again.';
+      if (typeof detail === 'string') {
+        msg = detail;
+      } else if (Array.isArray(detail)) {
+        // Pydantic validation errors come as an array
+        const first = detail[0];
+        if (first?.msg) msg = first.msg.replace('Value error, ', '');
+      }
+      // Make error messages more user-friendly
+      if (msg.includes('Username already taken')) msg = 'That username is already taken. Please choose another.';
+      if (msg.includes('Incorrect username or password') || msg.includes('401')) msg = 'Incorrect username or password.';
       setError(msg);
     } finally {
       setLoading(false);
@@ -73,13 +97,13 @@ export default function AuthPage() {
           <div className="auth-tabs">
             <button
               className={`auth-tab ${mode === 'login' ? 'active' : ''}`}
-              onClick={() => setMode('login')}
+              onClick={() => { setMode('login'); setError(''); }}
             >
               Sign in
             </button>
             <button
               className={`auth-tab ${mode === 'signup' ? 'active' : ''}`}
-              onClick={() => setMode('signup')}
+              onClick={() => { setMode('signup'); setError(''); }}
             >
               Create account
             </button>
@@ -97,6 +121,9 @@ export default function AuthPage() {
                 autoComplete="username"
                 required
               />
+              {mode === 'signup' && (
+                <span className="field-hint">3–50 characters, letters/numbers/underscores only</span>
+              )}
             </div>
             <div className="field-group">
               <label htmlFor="password">Password</label>
@@ -109,6 +136,9 @@ export default function AuthPage() {
                 autoComplete={mode === 'login' ? 'current-password' : 'new-password'}
                 required
               />
+              {mode === 'signup' && (
+                <span className="field-hint">Minimum 8 characters</span>
+              )}
             </div>
 
             {error && <div className="auth-error">{error}</div>}
