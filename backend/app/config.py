@@ -54,10 +54,10 @@ class Settings(BaseSettings):
     ACCESS_TOKEN_EXPIRE_MINUTES: int = 60 * 24 * 7  # tokens last 7 days
 
     # ── LLM (OpenAI) ──────────────────────────────────────────────────────────
-    # All 5 agents (intake, federal, state, case, opinion, referral) use this.
-    # gpt-4o is best quality; switch to gpt-4o-mini to cut costs during testing.
+    # All agents use this. gpt-5.1 is the strongest model that works with the
+    # pinned langchain-openai; drop to gpt-4.1-mini to cut costs during testing.
     OPENAI_API_KEY: str = ""
-    OPENAI_MODEL: str = "gemini-2.0-flash"
+    OPENAI_MODEL: str = "gpt-5.1"
     OPENAI_BASE_URL: str = ""
 
     # ── External Legal APIs ───────────────────────────────────────────────────
