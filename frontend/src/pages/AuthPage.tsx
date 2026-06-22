@@ -69,7 +69,7 @@ export default function AuthPage() {
 
         <div className="auth-hero">
           <h1>Your AI-powered<br /><em>legal assistant</em></h1>
-          <p>Describe your situation in plain language. LexAI researches federal law, state statutes, and case precedents — then gives you a clear picture of where you stand.</p>
+          <p>Describe your situation in plain language. LexAI researches federal law, state statutes, and case precedents then gives you a clear picture of where you stand.</p>
         </div>
 
         <div className="auth-features">
