@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect } from 'react';
 import { Scale, Plus, Trash2, MessageSquare, LogOut, FileDown } from 'lucide-react';
 import type { Conversation } from '../../types';
 import { conversationsApi } from '../../services/api';
@@ -16,18 +16,20 @@ export default function Sidebar({ activeId, onSelect, onNew, refreshTrigger }: S
   const [conversations, setConversations] = useState<Conversation[]>([]);
   const [deleting, setDeleting] = useState<string | null>(null);
 
-  const load = useCallback(async () => {
-    try {
-      const data = await conversationsApi.list();
-      setConversations(data);
-    } catch {
-      // ignore
-    }
-  }, []);
-
   useEffect(() => {
-    load();
-  }, [load, refreshTrigger]);
+    let cancelled = false;
+    (async () => {
+      try {
+        const data = await conversationsApi.list();
+        if (!cancelled) setConversations(data);
+      } catch {
+        // ignore
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [refreshTrigger]);
 
   const handleDelete = async (e: React.MouseEvent, id: string) => {
     e.stopPropagation();

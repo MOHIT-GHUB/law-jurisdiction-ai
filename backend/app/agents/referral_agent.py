@@ -44,22 +44,35 @@ import json
 
 # Import from state.py, NOT graph.py — avoids circular import
 from app.agents.state import AgentState
-from langchain_core.runnables import RunnableConfig
 from app.config import get_settings
 from app.tools.lawyer_finder_tool import find_lawyers_near
 from langchain_core.messages import HumanMessage, SystemMessage
+from langchain_core.runnables import RunnableConfig
 from langchain_openai import ChatOpenAI
 
 settings = get_settings()
 
-SYSTEM_PROMPT = """You are a legal referral specialist.
-Given a case summary and a list of nearby attorneys, recommend the TOP 3 most suitable lawyers.
-For each recommendation explain:
-- Why this lawyer's specialty matches the case
-- What to say when calling them (brief intro script)
-- What documents to bring to the first consultation
+# Map the classification bucket (from classification_agent) to an attorney specialty.
+_BUCKET_SPECIALTY = {
+    "employment": "employment lawyer",
+    "housing": "housing / tenant lawyer",
+    "consumer": "consumer protection lawyer",
+    "personal_injury": "personal injury lawyer",
+    "civil_rights": "civil rights attorney",
+}
 
-Keep recommendations practical and actionable."""
+SYSTEM_PROMPT = """You are a legal referral specialist helping a non-lawyer find representation.
+
+You are given the case summary and a list of attorney-finding RESOURCES — directories, the state
+bar referral service, legal aid, and possibly specific nearby firms. Present the best options:
+- For each, say what it is and when to use it (e.g. legal aid if cost is a concern; the state bar
+  referral service for a vetted match).
+- State the exact attorney SPECIALTY they should ask for.
+- Give a brief intro script for the first call.
+- List the documents to bring to a consultation.
+
+Be practical and encouraging. Use ONLY the resources provided — never invent firm names, phone
+numbers, or links."""
 
 
 async def run_referral_agent(state: AgentState, config: RunnableConfig) -> dict:
@@ -69,8 +82,11 @@ async def run_referral_agent(state: AgentState, config: RunnableConfig) -> dict:
     location = intake.get("location", "")
     state_name = intake.get("state", "")
 
-    # Determine specialty needed based on case type
-    specialty = _infer_specialty(intake.get("incident", ""), opinion)
+    # Prefer the structured classification bucket; fall back to keyword inference.
+    bucket = (state.get("legal_classification") or {}).get("bucket")
+    specialty = _BUCKET_SPECIALTY.get(bucket) or _infer_specialty(
+        intake.get("incident", ""), opinion
+    )
 
     lawyers = await find_lawyers_near(location=location, specialty=specialty, state=state_name)
 

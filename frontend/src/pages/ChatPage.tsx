@@ -20,10 +20,10 @@ export default function ChatPage({ conversationId, onConversationReady }: ChatPa
   const [loadingConv, setLoadingConv] = useState(true);
 
   useEffect(() => {
+    // ChatPage is remounted on conversationId change (see key={conversationId} in
+    // App), so initial state is already fresh — just load this conversation's
+    // history + saved results.
     let cancelled = false;
-    setLoadingConv(true);
-    setRestoredResult(null);
-    initMessages([]); // clear previous messages immediately
 
     conversationsApi.list()
       .then(list => {
@@ -48,7 +48,7 @@ export default function ChatPage({ conversationId, onConversationReady }: ChatPa
       });
 
     return () => { cancelled = true; };
-  }, [conversationId]);
+  }, [conversationId, initMessages]);
 
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });

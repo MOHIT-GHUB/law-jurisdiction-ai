@@ -51,9 +51,9 @@ import json
 # Import from state.py, NOT graph.py — avoids circular import
 from app.agents.parsing import extract_json
 from app.agents.state import AgentState
-from langchain_core.runnables import RunnableConfig
 from app.config import get_settings
 from langchain_core.messages import HumanMessage, SystemMessage
+from langchain_core.runnables import RunnableConfig
 from langchain_openai import ChatOpenAI
 
 settings = get_settings()
@@ -78,29 +78,61 @@ def _opinion_visible(text: str) -> str:
     return text[:cut].rstrip()
 
 
-SYSTEM_PROMPT = """You are a senior US legal analyst synthesizing research from multiple sources.
+SYSTEM_PROMPT = """You are a senior US legal analyst writing a clear, rigorous opinion for a non-lawyer.
 
-Given:
-- The user's case details (intake summary)
-- Federal law findings
-- State law findings
-- Relevant past case law
+You are given the user's case, the research agents' analyst notes, and a `sources` object holding
+the ACTUAL statutes and court cases retrieved for this matter — each item has a `url`.
 
-Produce a comprehensive legal opinion that includes:
+GROUNDING RULES (critical — violating these makes the opinion worthless):
+- Cite ONLY statutes and cases that appear in `sources`. NEVER invent a case name, citation,
+  statute number, court, or URL.
+- Every authority you cite MUST be a markdown link using its url: [Name or citation](url).
+- If `sources` contains no on-point authority for a section, say so honestly
+  (e.g. "No directly on-point cases were retrieved") instead of fabricating one.
 
-1. **Case Overview** — plain English summary of the legal situation
-2. **Strongest Legal Arguments** — the top 2-3 laws/precedents that support the user
-3. **Case Strength Score** — a number from 0-100 indicating how strong the case is
-   - 0-30: Weak, limited legal options
-   - 31-60: Moderate, some merit but challenges exist
-   - 61-85: Strong, clear legal violations found
-   - 86-100: Very strong, excellent precedent and clear law violations
-4. **Does the user have a viable case?** — direct yes/no with reasoning
-5. **Key risks or weaknesses** — be honest about challenges
-6. **Recommended next steps** — 3-5 concrete actions the user should take NOW
+Write the opinion in markdown with these sections:
 
-IMPORTANT: Always end with a JSON block in this exact format:
-{"case_strength_score": <number>, "has_viable_case": <true/false>, "recommended_actions": ["action1", "action2", "action3"]}"""
+## Case Overview
+Plain-English summary of the situation and the precise legal question(s).
+
+## Applicable Law
+The relevant statutes/regulations from `sources`. For each: cite with a link, explain in plain
+English what it requires or protects, and tie it to these specific facts.
+
+## Relevant Case Law
+A full paragraph PER relevant case in `sources` — go deep, this is the most valuable section:
+- Start with **[Case name, citation](url)** (court, year).
+- State the court's holding and the facts that drove it.
+- Explain precisely why it is analogous to (or distinguishable from) the user's facts, and what
+  that implies for their likelihood of success.
+- Note the outcome/remedy (damages, injunction, etc.) where known.
+If no retrieved case is on point, say so plainly rather than inventing precedent.
+
+## Case Strength Score
+A 0-100 score with a one-paragraph justification (0-30 weak, 31-60 moderate, 61-85 strong,
+86-100 very strong).
+
+## Viability
+Direct yes/no on whether the user has a viable case, with reasoning.
+
+## Risks & Weaknesses
+Be honest: evidentiary gaps, deadlines (statute of limitations), counterarguments.
+
+## Recommended Next Steps
+3-5 concrete, prioritized actions.
+
+End with: "*This is not legal advice. Consult a licensed attorney.*"
+
+IMPORTANT: After the disclaimer, output a JSON block in EXACTLY this format and write nothing after it:
+{"case_strength_score": <number>, "has_viable_case": <true|false>, "recommended_actions": ["action1", "action2", "action3"]}"""
+
+
+def _sources(results: list[dict]) -> list[dict]:
+    """Flatten the structured `raw` items (with real URLs) out of research results."""
+    items: list[dict] = []
+    for r in results or []:
+        items.extend(r.get("raw", []) or [])
+    return items
 
 
 async def run_opinion_agent(state: AgentState, config: RunnableConfig) -> dict:
@@ -111,15 +143,24 @@ async def run_opinion_agent(state: AgentState, config: RunnableConfig) -> dict:
 
     context = {
         "intake": intake,
-        "federal_law": [r.get("analysis", "") for r in federal],
-        "state_law": [r.get("analysis", "") for r in state_law],
-        "case_law": [r.get("analysis", "") for r in case_law],
+        # Analyst notes from each research agent (prose).
+        "analysis": {
+            "federal": [r.get("analysis", "") for r in federal],
+            "state": [r.get("analysis", "") for r in state_law],
+            "case_law": [r.get("analysis", "") for r in case_law],
+        },
+        # The REAL retrieved authorities, each with a url — cite only from here.
+        "sources": {
+            "federal_statutes": _sources(federal),
+            "state_statutes": _sources(state_law),
+            "cases": _sources(case_law),
+        },
     }
 
     llm = ChatOpenAI(model=settings.OPENAI_MODEL, api_key=settings.OPENAI_API_KEY, streaming=True)
     messages = [
         SystemMessage(content=SYSTEM_PROMPT),
-        HumanMessage(content=f"Research data:\n{json.dumps(context, indent=2)}"),
+        HumanMessage(content=f"Case file and retrieved sources:\n{json.dumps(context, indent=2)}"),
     ]
 
     opinion_text = ""

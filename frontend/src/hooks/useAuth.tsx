@@ -45,6 +45,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   );
 }
 
+// Context + its hook are colocated by design; fast-refresh's component-only rule
+// doesn't apply to this provider file.
+// eslint-disable-next-line react-refresh/only-export-components
 export function useAuth() {
   const ctx = useContext(AuthContext);
   if (!ctx) throw new Error('useAuth must be used within AuthProvider');

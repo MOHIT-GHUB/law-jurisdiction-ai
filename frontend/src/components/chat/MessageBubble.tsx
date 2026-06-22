@@ -26,7 +26,13 @@ export default function MessageBubble({ message, isStreaming }: MessageBubblePro
             {message.content}
           </ReactMarkdown>
         )}
-        {isStreaming && <span className="cursor-blink">▌</span>}
+        {isStreaming && (
+          <span className="typing-dots" aria-label="Assistant is typing">
+            <span></span>
+            <span></span>
+            <span></span>
+          </span>
+        )}
       </div>
     </div>
   );

@@ -188,11 +188,12 @@ from app.config import get_settings
 from app.database import AsyncSessionLocal
 from app.middleware.prompt_guard import check_prompt
 from app.models.models import Conversation, ConversationState, Message
+from app.utils.pii import redact_pii
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect
 from jose import JWTError, jwt
-from sqlalchemy import select
-from typing import Any
 from langchain_core.runnables import RunnableConfig
+from sqlalchemy import select
+
 logger = logging.getLogger(__name__)
 settings = get_settings()
 
@@ -324,6 +325,7 @@ async def _finalize_conversation(conversation_id: str, result: dict) -> None:
                 "case_strength_score": result.get("case_strength_score", 0),
                 "recommended_actions": result.get("recommended_actions", []),
                 "referred_lawyers": result.get("referred_lawyers", []),
+                "legal_classification": result.get("legal_classification", {}),
                 "federal_law_results": result.get("federal_law_results", []),
                 "state_law_results": result.get("state_law_results", []),
                 "case_law_results": result.get("case_law_results", []),
@@ -394,8 +396,11 @@ async def chat_websocket(websocket: WebSocket, conversation_id: str):
             if not user_message:
                 continue
 
-            # ── Prompt Guard: block injections / abuse ────────────────────
-            guard = check_prompt(user_message)
+            # ── Redact PII before it touches storage, the LLM, or moderation ─
+            user_message = redact_pii(user_message)
+
+            # ── Prompt Guard: rate limit + injection + moderation ─────────
+            guard = await check_prompt(user_message, user_id)
             if not guard.allowed:
                 await websocket.send_json({"type": "error", "message": guard.reason})
                 continue  # wait for a valid message, don't disconnect

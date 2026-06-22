@@ -35,39 +35,80 @@ import json
 
 # Import from state.py, NOT graph.py — avoids circular import
 from app.agents.state import AgentState
-from langchain_core.runnables import RunnableConfig
 from app.config import get_settings
 from app.tools.courtlistener_tool import search_courtlistener
 from langchain_core.messages import HumanMessage, SystemMessage
+from langchain_core.runnables import RunnableConfig
 from langchain_openai import ChatOpenAI
 
 settings = get_settings()
 
 SYSTEM_PROMPT = """You are a case law research specialist.
-Given a legal incident, find past US court cases with similar facts where the plaintiff WON.
-For each case:
-- Case name and citation
-- Court and year
-- Key facts that match our case
-- Why the plaintiff won
-- Relevance score to current case (1-10)
 
-Focus on cases from the same state if possible. Federal circuit cases also valuable."""
+You are given the user's incident and a list of REAL court cases retrieved from CourtListener
+(each has case_name, court, citation, date, summary, and url).
+
+STRICT RULES:
+- Discuss ONLY the cases provided below. NEVER invent a case name, citation, court, or URL.
+- Whenever you reference a case, link it as a markdown link using its url: [Case name](url).
+- If none of the retrieved cases are genuinely on point, say so plainly — do not fabricate precedent.
+
+Order cases most-relevant first. For each relevant case, write a short paragraph:
+- **[Case name, citation](url)** — court and year
+- Holding & key facts (what the court decided and why)
+- Why it is analogous to (or distinguishable from) the user's situation
+- Relevance score (1-10)
+
+Prefer cases from the user's state; federal circuit cases also count."""
+
+# CourtListener is a full-text engine — a narrative sentence retrieves poorly.
+# We first distill the incident into legal search terms (causes of action / terms
+# of art), which dramatically improves relevance.
+QUERY_BUILD_PROMPT = """You write search queries for CourtListener, a full-text search engine over US court opinions.
+
+Given a legal incident, output a SHORT query (3-8 words) of the key legal concepts, causes of
+action, and claim types a lawyer would search for — using legal terms of art, NOT a narrative.
+
+Examples:
+- "fired after reporting safety violations" -> whistleblower retaliation wrongful termination
+- "landlord entered my apartment without notice" -> tenant privacy unlawful entry landlord
+- "a coworker's prank physically injured me at work" -> assault battery negligence workplace injury
+
+Output ONLY the query text — no quotes, no labels, no explanation."""
+
+
+async def _build_search_query(intake: dict, bucket: str, llm) -> str:
+    """Distill the incident into focused legal search terms for CourtListener."""
+    incident = intake.get("incident", "")
+    if not incident:
+        return ""
+    resp = await llm.ainvoke(
+        [
+            SystemMessage(content=QUERY_BUILD_PROMPT),
+            HumanMessage(content=f"Incident: {incident}\nCase type: {bucket or 'unknown'}"),
+        ]
+    )
+    query = (resp.content or "").strip().strip('"').replace("\n", " ")
+    return query or incident
 
 
 async def run_case_law_agent(state: AgentState, config: RunnableConfig) -> dict:
     intake = state.get("intake_summary", {})
-
-    raw_results = await search_courtlistener(
-        query=intake.get("incident", ""),
-        state=intake.get("state", ""),
-    )
+    bucket = (state.get("legal_classification") or {}).get("bucket") or ""
 
     llm = ChatOpenAI(model=settings.OPENAI_MODEL, api_key=settings.OPENAI_API_KEY)
+
+    # Build a focused query first, then search with it.
+    query = await _build_search_query(intake, bucket, llm)
+    raw_results = await search_courtlistener(query=query, state=intake.get("state", ""))
     messages = [
         SystemMessage(content=SYSTEM_PROMPT),
         HumanMessage(
-            content=f"Case: {json.dumps(intake)}\nCourtListener results: {json.dumps(raw_results[:5])}"
+            content=(
+                f"User's case:\n{json.dumps(intake)}\n\n"
+                "Retrieved cases (cite ONLY these; include each one's url as a link):\n"
+                f"{json.dumps(raw_results[:8], indent=2)}"
+            )
         ),
     ]
     response = await llm.ainvoke(messages)

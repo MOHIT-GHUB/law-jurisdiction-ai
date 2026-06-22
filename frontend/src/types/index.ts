@@ -38,6 +38,8 @@ export interface Lawyer {
   distance?: string;
   specialty?: string;
   rating?: number;
+  url?: string;
+  kind?: string;
 }
 
 export interface LawResult {

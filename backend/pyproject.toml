@@ -36,14 +36,11 @@ dependencies = [
     "langgraph>=0.1.5,<0.2",
     "langchain-core>=0.2.5,<0.3",
 
-    # PDF generation — Option A: programmatic PDF (utils/pdf_export.py)
-    "reportlab==4.1.0",
+    # PDF generation — HTML/CSS rendered to PDF (utils/pdf_export.py).
+    # weasyprint needs system libs (Pango/cairo): see Dockerfile / README.
+    "weasyprint>=62,<66",
+    "markdown>=3.5",  # opinion markdown → HTML for the report
 ]
-
-[project.optional-dependencies]
-# PDF generation — Option B: HTML → PDF (easier to style).
-# Install with: uv sync --extra pdf-html
-pdf-html = ["weasyprint==61.2"]
 
 [dependency-groups]
 # Dev-only tooling. Installed by `uv sync`, excluded from the Docker image

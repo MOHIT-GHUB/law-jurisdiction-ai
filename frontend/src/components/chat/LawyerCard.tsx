@@ -1,4 +1,4 @@
-import { MapPin, Phone, Star, Briefcase } from 'lucide-react';
+import { MapPin, Phone, Star, Briefcase, ExternalLink } from 'lucide-react';
 import type { Lawyer } from '../../types';
 
 interface LawyerCardProps {
@@ -11,7 +11,19 @@ export default function LawyerCard({ lawyer, index }: LawyerCardProps) {
     <div className="lawyer-card" style={{ animationDelay: `${index * 0.1}s` }}>
       <div className="lawyer-avatar">{lawyer.name[0]}</div>
       <div className="lawyer-info">
-        <div className="lawyer-name">{lawyer.name}</div>
+        {lawyer.url ? (
+          <a
+            className="lawyer-name lawyer-name-link"
+            href={lawyer.url}
+            target="_blank"
+            rel="noopener noreferrer"
+          >
+            {lawyer.name}
+            <ExternalLink size={11} />
+          </a>
+        ) : (
+          <div className="lawyer-name">{lawyer.name}</div>
+        )}
         {lawyer.firm && <div className="lawyer-firm">{lawyer.firm}</div>}
         <div className="lawyer-details">
           {lawyer.specialty && (

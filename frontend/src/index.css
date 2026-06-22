@@ -376,12 +376,22 @@ body {
   font-style: italic;
 }
 
-.cursor-blink {
-  animation: blink 1s step-end infinite;
-  color: var(--gold);
-  font-style: normal;
+/* Inline "assistant is typing" dots shown while a message streams */
+.typing-dots {
+  display: inline-flex;
+  gap: 4px;
+  margin-top: 8px;
+  vertical-align: middle;
 }
-@keyframes blink { 50% { opacity: 0; } }
+.typing-dots span {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--gold);
+  animation: dot-bounce 1.4s ease-in-out infinite;
+}
+.typing-dots span:nth-child(2) { animation-delay: 0.2s; }
+.typing-dots span:nth-child(3) { animation-delay: 0.4s; }
 
 /* Status / thinking ──────────────────────────────────────── */
 .status-row {
@@ -789,6 +799,16 @@ body {
   color: var(--text);
   margin-bottom: 2px;
 }
+
+.lawyer-name-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  color: var(--gold);
+  text-decoration: none;
+}
+.lawyer-name-link:hover { text-decoration: underline; }
+.lawyer-name-link svg { opacity: 0.7; }
 
 .lawyer-firm {
   font-size: 12px;

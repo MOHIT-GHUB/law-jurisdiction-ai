@@ -36,9 +36,9 @@ from datetime import UTC, datetime
 # Import from state.py, NOT graph.py — avoids circular import
 from app.agents.parsing import extract_json
 from app.agents.state import AgentState
-from langchain_core.runnables import RunnableConfig
 from app.config import get_settings
 from langchain_core.messages import HumanMessage, SystemMessage
+from langchain_core.runnables import RunnableConfig
 from langchain_openai import ChatOpenAI
 
 settings = get_settings()

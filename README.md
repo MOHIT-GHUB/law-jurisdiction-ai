@@ -1,250 +1,267 @@
-# LexAI — US Jurisdiction Assistant
+# ⚖️ LexAI — US Jurisdiction Assistant
 
-LexAI is a multi-agent legal assistant that helps a user describe a legal situation in plain language and get back a structured, jurisdiction-aware analysis: which **federal** and **state** laws apply, relevant **case law**, a **case-strength score**, recommended next steps, and nearby **attorney referrals**.
+**LexAI turns "I think something illegal happened to me" into a structured, cited legal analysis.**
 
-The user chats with the system; behind the scenes a [LangGraph](https://langchain-ai.github.io/langgraph/) pipeline of specialized agents gathers and synthesizes the answer, streaming tokens back over a WebSocket.
+Describe your situation in plain language and LexAI walks you through intake, figures out what kind of case it is, researches the **federal** and **state** statutes and **real court precedents** that apply, gives you a **0–100 case-strength score** with honest risks, recommends next steps, and points you to **attorneys and legal-aid resources** near you — then exports the whole thing as a polished **PDF**.
 
-> ⚠️ **Status: work in progress.** The backend boots and serves today, but several pieces are still being built (see [Project status](#project-status)). This README covers the current, uv-based local setup.
+Behind the chat is a [LangGraph](https://langchain-ai.github.io/langgraph/) pipeline of specialized agents that research in parallel and stream their reasoning back token-by-token over a WebSocket.
+
+> **Disclaimer:** LexAI is an AI research tool, not a law firm. Its output is informational only, is not legal advice, and creates no attorney-client relationship.
 
 ---
 
-## How it works
+## ✨ Highlights
 
+- **Multi-agent pipeline** — intake → triage classification → *parallel* legal research → synthesized opinion → attorney referral, orchestrated with LangGraph.
+- **Grounded, cited case law** — case precedents come from real CourtListener search results with **clickable links**; the opinion is instructed to cite *only* retrieved authorities, so it doesn't invent cases.
+- **Case-strength score (0–100)** — an at-a-glance read on legal merit, rendered as an animated gauge in the UI and an SVG donut in the PDF.
+- **Smart triage / early exits** — politely bows out of out-of-scope matters (no identifiable defendant, incident outside the US, criminal-only, or likely time-barred) instead of inventing an answer.
+- **Real-time streaming** — responses stream over WebSocket with a live typing indicator.
+- **Professional PDF reports** — generated from an HTML/CSS template via WeasyPrint (matter caption, score gauge, linked authorities, attorney cards).
+- **Safety & privacy by default** — prompt-injection guard, OpenAI moderation, Redis rate limiting, and PII redaction (SSNs, cards, emails, phones) *before* anything is stored or sent to the LLM.
+- **Demo mode** — flip one env var to serve realistic mock legal data so the app never breaks on stage, even without external API keys.
+
+---
+
+## 🏗️ Architecture
+
+```mermaid
+flowchart LR
+    subgraph Client
+      FE["React + Vite SPA<br/>(chat · score card · PDF export)"]
+    end
+
+    subgraph Server["FastAPI server"]
+      REST["REST<br/>auth · conversations"]
+      WS["WebSocket /ws<br/>(streaming chat)"]
+      GRAPH["LangGraph<br/>agent pipeline"]
+    end
+
+    subgraph Data
+      PG[("PostgreSQL<br/>users · conversations · messages")]
+      RD[("Redis<br/>API cache · rate limits")]
+    end
+
+    subgraph External["External services"]
+      OAI["OpenAI<br/>(LLM + moderation)"]
+      CONG["Congress.gov"]
+      LII["Cornell LII"]
+      COURT["CourtListener"]
+    end
+
+    FE <-->|"JWT · REST"| REST
+    FE <-->|"WebSocket stream"| WS
+    REST --> PG
+    WS --> GRAPH
+    GRAPH --> PG
+    GRAPH --> RD
+    GRAPH --> OAI
+    GRAPH --> CONG & LII & COURT
 ```
-        user message
-             │
-             ▼
-      ┌─────────────┐   not enough info yet
-      │   intake    │───────────────► (wait for next message)
-      │   agent     │
-      └──────┬──────┘  intake complete
-             ▼
-   ┌───────────────────┐   runs the 3 research agents in parallel
-   │  fan_out_research │
-   └───┬─────┬─────┬───┘
-       ▼     ▼     ▼
-   federal  state  case-law      (Congress.gov · Cornell LII · CourtListener)
-       └─────┼─────┘
-             ▼
-       ┌──────────┐   writes opinion + case_strength_score + recommended_actions
-       │ opinion  │
-       └────┬─────┘
-            ▼
-      ┌───────────┐   finds nearby attorneys (Google Maps)
-      │ referral  │
-      └────┬──────┘
-           ▼
-          done
+
+### Agent pipeline
+
+Every user message passes through the safety layer, then drives the graph. The graph runs **once per message** — if intake needs more info it ends the turn and resumes on your next reply (state persisted via LangGraph's checkpointer).
+
+```mermaid
+flowchart TD
+    U([User message]) --> G{"Guard<br/>rate-limit · PII redaction<br/>injection · moderation"}
+    G -->|blocked| X([Rejected with reason])
+    G -->|ok| I[intake_agent]
+
+    I -->|needs more info| W(["Ends turn · awaits next message"])
+    I -->|"out of scope<br/>(no defendant / outside US)"| E1([Early exit])
+    I -->|complete| C[classification_agent]
+
+    C -->|"criminal-only / time-barred"| E2([Early exit])
+    C -->|"employment · housing · consumer<br/>personal_injury · civil_rights"| F((fan_out_research))
+
+    F --> FED[federal_law_agent<br/>Congress.gov]
+    F --> ST[state_law_agent<br/>Cornell LII]
+    F --> CL[case_law_agent<br/>CourtListener]
+
+    FED --> O[opinion_agent]
+    ST --> O
+    CL --> O
+    O --> R[referral_agent]
+    R --> D(["Score · cited analysis · attorneys · PDF"])
 ```
 
-**The agents** (in `backend/app/agents/`):
+| Agent | Role | Source |
+|-------|------|--------|
+| `intake_agent` | Collects the 5 facts (incident, location, state, perpetrator, proof, date) one at a time; compresses long histories without losing collected fields | LLM |
+| `classification_agent` | Triages into `employment` · `housing` · `consumer` · `personal_injury` · `civil_rights`, and gates criminal-only / time-barred matters | LLM |
+| `federal_law_agent` | Applicable federal statutes | Congress.gov |
+| `state_law_agent` | Applicable state statutes | Cornell LII |
+| `case_law_agent` | Relevant precedent (distills the incident into a focused legal query first) | CourtListener |
+| `opinion_agent` | Synthesizes a cited opinion + 0–100 strength score; cites only retrieved authorities | LLM |
+| `referral_agent` | Attorney + legal-aid resources, specialty driven by the classification bucket | Justia · Google Maps · state bar · LawHelp |
 
-| Agent | Role | Data source |
-|-------|------|-------------|
-| `intake_agent` | Asks clarifying questions until it has enough facts (incident, location, state, etc.) | LLM |
-| `federal_law_agent` | Finds applicable federal statutes | Congress.gov |
-| `state_law_agent` | Finds applicable state statutes | Cornell LII |
-| `case_law_agent` | Finds relevant precedent | CourtListener |
-| `opinion_agent` | Synthesizes a legal opinion + a 0–100 case-strength score | LLM |
-| `referral_agent` | Recommends nearby attorneys | Google Maps |
-
-All agents share a single `AgentState` (the "whiteboard") defined in `backend/app/agents/state.py`.
-
----
-
-## Tech stack
-
-- **API:** FastAPI (async) + Uvicorn, with a WebSocket chat endpoint
-- **Agents:** LangGraph + LangChain (OpenAI models)
-- **Database:** PostgreSQL via async SQLAlchemy (users, conversations, messages)
-- **Cache:** Redis (caches external legal-API responses to stay fast and within rate limits)
-- **Auth:** JWT (python-jose) + bcrypt password hashing (passlib)
-- **PDF export:** ReportLab (generates a downloadable case report)
-- **Packaging:** [uv](https://docs.astral.sh/uv/) (`pyproject.toml` + `uv.lock`)
-- **Frontend:** React (planned — not built yet)
+All agents share one `AgentState` (the "whiteboard") defined in `backend/app/agents/state.py`; the streaming callback is passed via LangGraph config so it never breaks checkpoint serialization.
 
 ---
 
-## Prerequisites
+## 🧰 Tech stack
 
-- [**Docker**](https://docs.docker.com/get-docker/) + Docker Compose (for Postgres, Redis, and optionally the server)
-- [**uv**](https://docs.astral.sh/uv/getting-started/installation/) (only needed if you run the server on your host instead of in Docker)
-  - uv manages the Python version automatically — you do **not** need Python 3.12 pre-installed.
-- An **OpenAI API key** (the agents call OpenAI). Other API keys are optional in demo mode.
+| Layer | Choice |
+|-------|--------|
+| **Frontend** | React 19 + Vite + TypeScript + Tailwind CSS (WebSocket streaming, react-markdown, framer-motion) |
+| **API** | FastAPI (async) + Uvicorn — REST + WebSocket |
+| **Agents** | LangGraph + LangChain, OpenAI models |
+| **Database** | PostgreSQL via async SQLAlchemy |
+| **Cache / limits** | Redis (legal-API response cache + per-user rate limiting) |
+| **Auth** | JWT (python-jose) + bcrypt (passlib) |
+| **PDF** | HTML/CSS → PDF via WeasyPrint |
+| **Safety** | Prompt-injection guard · OpenAI moderation · rate limiting · PII redaction |
+| **Tooling** | [uv](https://docs.astral.sh/uv/) packaging · ruff · pre-commit · Docker Compose |
 
 ---
 
-## Setup
-
-### 1. Configure environment
+## 🚀 Quickstart
 
 ```bash
-cp backend/.env.example backend/.env
+# 1. Install backend deps, the git hook, and frontend deps
+make install
+
+# 2. Create env files (backend/.env + frontend/.env)
+make env
+
+# 3. Add your OpenAI key to backend/.env  (SECRET_KEY is auto-suggested below)
+#    OPENAI_API_KEY=sk-...
+#    SECRET_KEY=$(python3 -c "import secrets; print(secrets.token_hex(32))")
+
+# 4. Run everything: Postgres + Redis + server (Docker) and the frontend (Vite)
+make dev
 ```
 
-Then edit `backend/.env` and set at minimum:
+Then open the frontend (Vite prints the URL, usually **http://localhost:5173**). The API + Swagger docs are at **http://localhost:8000/docs**.
 
-- `OPENAI_API_KEY` — required for the agents to run
-- `SECRET_KEY` — generate one with:
-  ```bash
-  python3 -c "import secrets; print(secrets.token_hex(32))"
-  ```
-
-Leave `DEMO_MODE=True` to bypass the external legal APIs and return realistic mock data — handy when you don't have the other API keys or want a reliable demo.
-
-> The `DATABASE_URL` / `REDIS_URL` in `.env` use `localhost` (correct for running the server on your host). When the server runs **inside** Docker Compose, those hosts are automatically overridden to the `postgres` / `redis` service names — no edit needed.
-
-### 2. Run
-
-You have two options.
-
-#### Option A — everything in Docker (simplest)
-
-Starts Postgres, Redis, **and** the backend server. Source is bind-mounted, so code edits hot-reload.
-
-```bash
-docker compose up -d --build
-```
-
-- API: http://localhost:8000
-- Interactive docs (Swagger): http://localhost:8000/docs
-
-Stop with `docker compose down` (add `-v` to also wipe the database/cache volumes).
-
-#### Option B — infra in Docker, server on your host (best for active dev)
-
-```bash
-# 1. Start just Postgres + Redis
-docker compose up -d postgres redis
-
-# 2. Install deps + run the server (uv creates the venv and fetches Python 3.12)
-cd backend
-uv sync
-uv run uvicorn app.main:app --reload --port 8000
-```
-
-Either way, open http://localhost:8000/docs to explore the API.
+> **Demo mode:** `backend/.env` ships with `DEMO_MODE=True`, which serves realistic mock data for the legal APIs (great for offline demos). Set `DEMO_MODE=False` for live Congress.gov / Cornell / CourtListener results, then recreate the server: `docker compose up -d --force-recreate server`.
 
 ---
 
-## IDE setup (VSCode)
+## 🛠️ Prerequisites
 
-After `uv sync`, point VSCode at the project interpreter so imports resolve:
-
-1. `Cmd+Shift+P` → **Python: Select Interpreter**
-2. **Enter interpreter path…** → `./backend/.venv/bin/python`
-
-(The auto-discovery list may not show it since the venv lives in the `backend/` subfolder.)
+- [**Docker**](https://docs.docker.com/get-docker/) + Docker Compose
+- [**uv**](https://docs.astral.sh/uv/getting-started/installation/) — only for running the server on your host; it also manages the Python version, so you don't need Python 3.12 preinstalled
+- [**Node.js**](https://nodejs.org/) 20+ (for the frontend)
+- An **OpenAI API key** (required). Congress.gov / Google Maps keys are optional — without them those features use demo/fallback data.
+- **PDF export (WeasyPrint)** needs Pango/cairo system libraries. The Docker image installs them automatically. For **host** runs install once — macOS: `brew install pango`; Debian/Ubuntu: `apt-get install libpango-1.0-0 libpangocairo-1.0-0`. On Apple Silicon, `make run` sets the Homebrew lib path for you.
 
 ---
 
-## Project structure
+## ⚙️ Setup details
+
+### Environment
+
+`make env` creates `backend/.env` and `frontend/.env` from their examples. In `backend/.env` set at minimum:
+
+- `OPENAI_API_KEY` — required for the agents
+- `SECRET_KEY` — `python3 -c "import secrets; print(secrets.token_hex(32))"`
+
+Leave `frontend/.env`'s `VITE_API_URL` **empty** in development — the Vite dev server proxies `/auth`, `/conversations`, and `/ws` to the backend (see `vite.config.ts`), which avoids CORS.
+
+> Inside Docker Compose, `DATABASE_URL` / `REDIS_URL` are overridden to the `postgres` / `redis` service names automatically — the `localhost` values in `.env` are correct for host runs.
+
+### Run options
+
+| Command | What it does |
+|---------|--------------|
+| `make dev` | **Everything**: Postgres + Redis + server in Docker, frontend dev server in the foreground |
+| `make up` | Full backend stack in Docker (no frontend) |
+| `make up-infra` | Just Postgres + Redis |
+| `make run` | Backend on your host with auto-reload (needs `make up-infra`) |
+| `make fe-dev` | Frontend dev server only |
+
+---
+
+## 🔒 Safety & privacy
+
+Every inbound message is processed by `backend/app/middleware/prompt_guard.py` **before** it reaches storage or the LLM:
+
+1. **PII redaction** — SSNs, payment cards (Luhn-validated), emails, and phone numbers are masked so raw secrets never hit Postgres or OpenAI. Legal facts (names, dates, locations, citations) are preserved on purpose.
+2. **Rate limiting** — Redis fixed-window, 20 messages/min per user.
+3. **Prompt-injection guard** — blocks jailbreak / instruction-override patterns (but *not* legal vocabulary like "assault" — a victim must be able to describe what happened).
+4. **Moderation** — OpenAI's moderation endpoint, scoped to genuine misuse categories only.
+
+The opinion agent is grounded (cites only retrieved authorities) and every report carries a legal disclaimer.
+
+---
+
+## 🗂️ Project structure
 
 ```
 .
-├── Makefile                  # dev command shortcuts (make help)
-├── docker-compose.yml        # postgres + redis + server
-├── .pre-commit-config.yaml   # ruff lint/format + hygiene hooks
+├── Makefile                    # dev command shortcuts (run `make help`)
+├── docker-compose.yml          # postgres + redis + server
+├── .pre-commit-config.yaml     # ruff lint/format + hygiene hooks
 ├── backend/
-│   ├── Dockerfile            # uv-based image for the server
-│   ├── pyproject.toml        # dependencies + ruff config (managed by uv)
-│   ├── uv.lock               # pinned, reproducible versions — commit this
-│   ├── .env.example          # copy to .env
+│   ├── Dockerfile              # uv-based image (+ WeasyPrint system libs)
+│   ├── pyproject.toml          # deps + ruff config (managed by uv)
+│   ├── uv.lock                 # pinned, reproducible versions
+│   ├── scripts/                # run_workflow.py, ws_smoke.py (manual testing)
 │   └── app/
-│       ├── main.py           # FastAPI entry point (app + lifespan)
-│       ├── config.py         # settings loaded from .env
-│       ├── database.py       # async SQLAlchemy engine/session + init_db()
-│       ├── redis_client.py   # Redis connection + cache helpers
-│       ├── agents/           # LangGraph agents + graph wiring
-│       ├── routers/          # auth, conversations, chat (WebSocket)
-│       ├── tools/            # external legal-API clients
-│       ├── models/           # SQLAlchemy ORM models
-│       ├── schemas/          # Pydantic request/response schemas
-│       ├── middleware/       # prompt-injection guard
-│       └── utils/            # auth helpers, PDF export
-└── frontend/                 # React app (planned)
+│       ├── main.py             # FastAPI app + lifespan
+│       ├── config.py           # settings from .env
+│       ├── database.py         # async SQLAlchemy engine/session
+│       ├── redis_client.py     # Redis connection + cache helpers
+│       ├── agents/             # LangGraph agents, graph wiring, shared state
+│       ├── routers/            # auth, conversations, chat (WebSocket)
+│       ├── tools/              # external legal-API clients
+│       ├── models/             # SQLAlchemy ORM models
+│       ├── schemas/            # Pydantic request/response models
+│       ├── middleware/         # prompt guard (safety + PII)
+│       └── utils/              # auth, PDF export, PII redaction
+└── frontend/                   # React + Vite + TypeScript + Tailwind SPA
+    └── src/{components,hooks,pages,services,types}
 ```
 
+---
 
-## Developer commands
+## 🧑‍💻 Developer commands
 
-Common tasks are wrapped in the `Makefile` — run `make help` to see them all:
+Run `make help` for the full list. Common ones:
 
 ```bash
-make install     # install deps (incl. dev tools) + git pre-commit hook
-make env         # create backend/.env from the example
-make up          # full stack in Docker (postgres + redis + server)
-make up-infra    # just Postgres + Redis
-make run         # run the server on the host with auto-reload
-make logs        # tail the server container logs
-make reset       # wipe DB/cache volumes and rebuild
-make lint        # ruff lint
-make fix         # ruff autofix + format
-make pre-commit  # run all hooks against every file
+make install     # backend deps + git hook + frontend deps
+make dev         # run the whole stack + frontend
+make lint        # ruff lint (backend)        make fe-lint   # eslint (frontend)
+make fix         # ruff autofix + format      make fe-build  # production build
+make pre-commit  # run all git hooks          make logs      # tail server logs
+make reset       # wipe DB/cache and rebuild
 ```
 
-The equivalent raw commands still work (`cd backend && uv lock && uv sync`, `docker compose ...`, etc.) if you prefer.
+**Code quality:** ruff + a pre-commit hook (lint/format scoped to `backend/`) are installed by `make install`; commits auto-format staged files.
 
-## Code quality (ruff + pre-commit)
+---
 
-Linting and formatting use [ruff](https://docs.astral.sh/ruff/), configured in `backend/pyproject.toml`. A [pre-commit](https://pre-commit.com/) hook runs ruff (with autofix) and a few hygiene checks on every commit, scoped to `backend/`.
+## 🧪 Testing the agent workflow
+
+No external services or auth needed — two scripts drive the pipeline directly.
+
+**Drive the graph** (`backend/scripts/run_workflow.py`) — a simulated multi-turn conversation that runs until intake completes or the pipeline early-exits:
 
 ```bash
-make install     # one-time: installs the git hook (or: make hooks)
+make smoke-mock                 # all scenarios, stubbed LLM — deterministic & offline
+make smoke SCENARIO=partial     # real LLM (a persona answers intake's questions)
 ```
 
-After that, `git commit` automatically lints/formats staged files. To run everything on demand: `make pre-commit`.
-
-## Manual testing the agent workflow
-
-There's no automated test suite yet — instead, two scripts let you exercise the LangGraph pipeline (intake → classification → research → opinion → referral, with early-exit gates) by hand. In both, `DEMO_MODE` is forced on so the legal tools (Congress/Cornell/CourtListener/Maps) return canned data — the **LLM** is the only thing that can hit OpenAI.
-
-### 1. Drive the graph directly — [scripts/run_workflow.py](backend/scripts/run_workflow.py)
-
-No server, DB, or auth needed. The driver runs a **multi-turn** conversation: it simulates the user and keeps replying until intake completes or the pipeline early-exits, reusing one `thread_id` across turns (so it also exercises the `MemorySaver` resume that `chat.py` relies on).
-
-Two modes:
-
-- **Mock** (`--mock`) — the LLM *and* the simulated user are stubbed. Deterministic, offline, free, no key needed.
-- **Real** (default) — agents call OpenAI, and a persona LLM plays the user and answers intake's questions. Needs `OPENAI_API_KEY` in `backend/.env`.
-
-Run via Make:
-
-```bash
-make smoke-mock                 # all scenarios, stubbed LLM (offline)
-make smoke                      # real LLM, SCENARIO=complete by default
-make smoke SCENARIO=partial     # real LLM, pick a scenario
-```
-
-Or call the script directly (run from `backend/` so it finds `.env`):
-
-```bash
-cd backend
-uv run python scripts/run_workflow.py partial --mock      # offline
-uv run python scripts/run_workflow.py partial             # real LLM
-uv run python scripts/run_workflow.py complete --max-turns 10
-```
-
-Scenarios:
-
-| Scenario | Exercises | Expected outcome |
-|----------|-----------|------------------|
-| `complete` | all 5 fields in the first message | full pipeline → referral |
-| `partial` | missing the date → intake asks, user answers | full pipeline (≥2 turns) |
+| Scenario | Exercises | Expected |
+|----------|-----------|----------|
+| `complete` | all facts up front | full pipeline → referral |
+| `partial` | missing the date | multi-turn → full pipeline |
 | `no-perp` | no identifiable defendant | early exit at intake |
 | `outside-us` | incident outside the US | early exit at intake |
 | `criminal` | criminal-only matter | early exit at classification |
 
-Each run prints every user turn, the streamed assistant text, and a final summary (route taken, turns, classification, case-strength score, result counts).
-
-### 2. End-to-end over the real API — [scripts/ws_smoke.py](backend/scripts/ws_smoke.py)
-
-Exercises the actual path the frontend uses: signs up for a JWT, opens the WebSocket, sends a chat turn, and prints the streamed frames. Needs the full stack running and `OPENAI_API_KEY` set for the server.
+**End-to-end over the real API** (`backend/scripts/ws_smoke.py`) — signs up, opens the WebSocket, and streams a real chat turn (needs the stack running):
 
 ```bash
-cp backend/.env.example backend/.env   # set OPENAI_API_KEY + SECRET_KEY; keep DEMO_MODE=True
-docker compose up -d --build           # postgres + redis + server
 make smoke-ws
 ```
 
-Optional overrides: `LEXAI_BASE_URL` (default `http://localhost:8000`) and `LEXAI_MESSAGE` (the chat message to send).
+---
+
+## 📄 License
+
+Built for a hackathon. Provided as-is for educational and demonstration purposes — **not legal advice**.
